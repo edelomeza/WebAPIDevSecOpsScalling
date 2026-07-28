@@ -12,12 +12,14 @@ namespace WebAPIDevSecOps.Services
         private readonly AppDbContext _context;
         private readonly IPasswordHasherService _passwordHasher;
         private readonly DbResilienceService _dbResilience;
+        private readonly ICacheService _cache;
 
-        public UsuarioService(AppDbContext context, IPasswordHasherService passwordHasher, DbResilienceService dbResilience)
+        public UsuarioService(AppDbContext context, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ICacheService cache)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _dbResilience = dbResilience;
+            _cache = cache;
         }
 
         public async Task<PagedResult<SegUsuarioDto>> GetAllAsync(QueryParams? queryParams = null)
@@ -96,7 +98,11 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<SegUsuarioDto?> GetByIdAsync(int id)
         {
-            return await _context.SegUsuario
+            var key = $"cache:usuario:{id}";
+            var cached = await _cache.GetAsync<SegUsuarioDto>(key);
+            if (cached is not null) return cached;
+
+            var usuario = await _context.SegUsuario
                 .AsNoTracking()
                 .Where(u => u.id == id)
                 .Select(u => new SegUsuarioDto
@@ -107,6 +113,11 @@ namespace WebAPIDevSecOps.Services
                     RowVersion = u.RowVersion
                 })
                 .FirstOrDefaultAsync();
+
+            if (usuario is not null)
+                await _cache.SetAsync(key, usuario, TimeSpan.FromSeconds(60));
+
+            return usuario;
         }
 
         public async Task<SegUsuarioDto> CreateAsync(UsuarioCreateDto dto)
@@ -180,6 +191,8 @@ namespace WebAPIDevSecOps.Services
 
             _context.Entry(segUsuario).State = EntityState.Modified;
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:usuario:{id}");
         }
 
         public async Task DeleteAsync(int id, UsuarioDeleteDto dto)
@@ -200,6 +213,8 @@ namespace WebAPIDevSecOps.Services
             _context.SegUsuario.Remove(segUsuario);
 
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:usuario:{id}");
         }
     }
 }

@@ -17,6 +17,7 @@ namespace UnitTest.Usuarios
     {
         private readonly Mock<IPasswordHasherService> _hasherMock;
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
         private const string FakeHash = "$argon2id$v=19$m=16384,t=2,p=1$test$hash";
 
         public GetTests()
@@ -24,6 +25,7 @@ namespace UnitTest.Usuarios
             _hasherMock = new Mock<IPasswordHasherService>();
             _hasherMock.Setup(h => h.HashPassword(It.IsAny<string>())).Returns(FakeHash);
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -35,7 +37,7 @@ namespace UnitTest.Usuarios
 
         private UsuarioController CreateController(AppDbContext context)
         {
-            return new UsuarioController(new UsuarioService(context, _hasherMock.Object, _dbResilience));
+            return new UsuarioController(new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object));
         }
 
         // ============ GetAll() ============

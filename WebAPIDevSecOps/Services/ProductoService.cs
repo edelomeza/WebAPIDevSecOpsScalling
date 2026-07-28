@@ -10,41 +10,47 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
+        private readonly ICacheService _cache;
 
-        public ProductoService(AppDbContext context, DbResilienceService dbResilience)
+        public ProductoService(AppDbContext context, DbResilienceService dbResilience, ICacheService cache)
         {
             _context = context;
             _dbResilience = dbResilience;
+            _cache = cache;
         }
 
         public async Task<PagedResult<ProProductoDto>> GetAllAsync(QueryParams? queryParams = null)
         {
             var p = queryParams ?? new QueryParams();
+            var key = $"cache:productos:page{p.PageNumber}:size{p.PageSize}";
 
-            var query = _context.ProProducto
-                .AsNoTracking()
-                .Select(x => new ProProductoDto
-                {
-                    id = x.id,
-                    strNombreProducto = x.strNombreProducto,
-                    strURLImagen = x.strURLImagen,
-                    strDescripcion = x.strDescripcion,
-                    intNumeroExistencia = x.intNumeroExistencia,
-                    decPrecio = x.decPrecio,
-                    RowVersion = x.RowVersion,
-                });
-
-            var totalCount = await query.CountAsync();
-            query = query.ApplyPagination(p);
-            var items = await query.ToListAsync();
-
-            return new PagedResult<ProProductoDto>
+            return await _cache.GetOrCreateAsync(key, async () =>
             {
-                Items = items,
-                TotalCount = totalCount,
-                PageNumber = p.PageNumber,
-                PageSize = p.PageSize,
-            };
+                var query = _context.ProProducto
+                    .AsNoTracking()
+                    .Select(x => new ProProductoDto
+                    {
+                        id = x.id,
+                        strNombreProducto = x.strNombreProducto,
+                        strURLImagen = x.strURLImagen,
+                        strDescripcion = x.strDescripcion,
+                        intNumeroExistencia = x.intNumeroExistencia,
+                        decPrecio = x.decPrecio,
+                        RowVersion = x.RowVersion,
+                    });
+
+                var totalCount = await query.CountAsync();
+                query = query.ApplyPagination(p);
+                var items = await query.ToListAsync();
+
+                return new PagedResult<ProProductoDto>
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    PageNumber = p.PageNumber,
+                    PageSize = p.PageSize,
+                };
+            }, TimeSpan.FromSeconds(30));
         }
 
         public async Task<PagedResult<ProProductoDto>> SearchByNameAsync(string texto, QueryParams? queryParams = null)
@@ -80,7 +86,11 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<ProProductoDto?> GetByIdAsync(int id)
         {
-            return await _context.ProProducto
+            var key = $"cache:producto:{id}";
+            var cached = await _cache.GetAsync<ProProductoDto>(key);
+            if (cached is not null) return cached;
+
+            var producto = await _context.ProProducto
                 .AsNoTracking()
                 .Where(x => x.id == id)
                 .Select(x => new ProProductoDto
@@ -94,6 +104,11 @@ namespace WebAPIDevSecOps.Services
                     RowVersion = x.RowVersion,
                 })
                 .FirstOrDefaultAsync();
+
+            if (producto is not null)
+                await _cache.SetAsync(key, producto, TimeSpan.FromSeconds(60));
+
+            return producto;
         }
 
         public async Task<ProProductoDto> CreateAsync(ProductoCreateDto dto)
@@ -150,6 +165,8 @@ namespace WebAPIDevSecOps.Services
 
             _context.Entry(producto).State = EntityState.Modified;
             await _dbResilience.SaveChangesAsync(_context);
+
+            await InvalidateProductCacheAsync(id);
         }
 
         public async Task DeleteAsync(int id, ProductoDeleteDto dto)
@@ -170,6 +187,13 @@ namespace WebAPIDevSecOps.Services
             _context.ProProducto.Remove(producto);
 
             await _dbResilience.SaveChangesAsync(_context);
+
+            await InvalidateProductCacheAsync(id);
+        }
+
+        private async Task InvalidateProductCacheAsync(int id)
+        {
+            await _cache.RemoveAsync($"cache:producto:{id}");
         }
     }
 }

@@ -7,6 +7,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -15,10 +16,19 @@ namespace UnitTest.Clientes
     public class GetTests
     {
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
 
         public GetTests()
         {
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
+            _cacheMock
+                .Setup(x => x.GetOrCreateAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<Func<Task<PagedResult<CliClienteDto>>>>(),
+                    It.IsAny<TimeSpan?>()))
+                .Returns<string, Func<Task<PagedResult<CliClienteDto>>>, TimeSpan?>(
+                    (_, factory, _) => factory());
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -30,7 +40,7 @@ namespace UnitTest.Clientes
 
         private ClienteController CreateController(AppDbContext context)
         {
-            return new ClienteController(new ClienteService(context, _dbResilience));
+            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object));
         }
 
         // ============ GetAll() ============

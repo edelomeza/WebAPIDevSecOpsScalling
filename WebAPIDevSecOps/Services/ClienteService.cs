@@ -10,40 +10,46 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
+        private readonly ICacheService _cache;
 
-        public ClienteService(AppDbContext context, DbResilienceService dbResilience)
+        public ClienteService(AppDbContext context, DbResilienceService dbResilience, ICacheService cache)
         {
             _context = context;
             _dbResilience = dbResilience;
+            _cache = cache;
         }
 
         public async Task<PagedResult<CliClienteDto>> GetAllAsync(QueryParams? queryParams = null)
         {
             var p = queryParams ?? new QueryParams();
+            var key = $"cache:clientes:page{p.PageNumber}:size{p.PageSize}";
 
-            var query = _context.CliCliente
-                .AsNoTracking()
-                .Select(c => new CliClienteDto
-                {
-                    id = c.id,
-                    strNombreCliente = c.strNombreCliente,
-                    strDireccionCliente = c.strDireccionCliente,
-                    strCorreoElectronico = c.strCorreoElectronico,
-                    strNumeroTelefono = c.strNumeroTelefono,
-                    RowVersion = c.RowVersion,
-                });
-
-            var totalCount = await query.CountAsync();
-            query = query.ApplyPagination(p);
-            var items = await query.ToListAsync();
-
-            return new PagedResult<CliClienteDto>
+            return await _cache.GetOrCreateAsync(key, async () =>
             {
-                Items = items,
-                TotalCount = totalCount,
-                PageNumber = p.PageNumber,
-                PageSize = p.PageSize,
-            };
+                var query = _context.CliCliente
+                    .AsNoTracking()
+                    .Select(c => new CliClienteDto
+                    {
+                        id = c.id,
+                        strNombreCliente = c.strNombreCliente,
+                        strDireccionCliente = c.strDireccionCliente,
+                        strCorreoElectronico = c.strCorreoElectronico,
+                        strNumeroTelefono = c.strNumeroTelefono,
+                        RowVersion = c.RowVersion,
+                    });
+
+                var totalCount = await query.CountAsync();
+                query = query.ApplyPagination(p);
+                var items = await query.ToListAsync();
+
+                return new PagedResult<CliClienteDto>
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    PageNumber = p.PageNumber,
+                    PageSize = p.PageSize,
+                };
+            }, TimeSpan.FromSeconds(30));
         }
 
         public async Task<PagedResult<CliClienteDto>> SearchByNameAsync(string texto, QueryParams? queryParams = null)
@@ -93,7 +99,11 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<CliClienteDto?> GetByIdAsync(int id)
         {
-            return await _context.CliCliente
+            var key = $"cache:cliente:{id}";
+            var cached = await _cache.GetAsync<CliClienteDto>(key);
+            if (cached is not null) return cached;
+
+            var cliente = await _context.CliCliente
                 .AsNoTracking()
                 .Where(c => c.id == id)
                 .Select(c => new CliClienteDto
@@ -106,6 +116,11 @@ namespace WebAPIDevSecOps.Services
                     RowVersion = c.RowVersion,
                 })
                 .FirstOrDefaultAsync();
+
+            if (cliente is not null)
+                await _cache.SetAsync(key, cliente, TimeSpan.FromSeconds(60));
+
+            return cliente;
         }
 
         public async Task<CliClienteDto> CreateAsync(CliClienteCreateDto dto)
@@ -174,6 +189,8 @@ namespace WebAPIDevSecOps.Services
 
             _context.Entry(cliente).State = EntityState.Modified;
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:cliente:{id}");
         }
 
         public async Task DeleteAsync(int id, CliClienteDeleteDto dto)
@@ -190,6 +207,8 @@ namespace WebAPIDevSecOps.Services
             _context.CliCliente.Remove(cliente);
 
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:cliente:{id}");
         }
     }
 }

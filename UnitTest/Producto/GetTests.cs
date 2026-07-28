@@ -7,6 +7,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -15,10 +16,19 @@ namespace UnitTest.Producto
     public class GetTests
     {
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
 
         public GetTests()
         {
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
+            _cacheMock
+                .Setup(x => x.GetOrCreateAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<Func<Task<PagedResult<ProProductoDto>>>>(),
+                    It.IsAny<TimeSpan?>()))
+                .Returns<string, Func<Task<PagedResult<ProProductoDto>>>, TimeSpan?>(
+                    (_, factory, _) => factory());
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -30,7 +40,7 @@ namespace UnitTest.Producto
 
         private ProductoController CreateController(AppDbContext context)
         {
-            return new ProductoController(new ProductoService(context, _dbResilience));
+            return new ProductoController(new ProductoService(context, _dbResilience, _cacheMock.Object));
         }
 
         // ============ GetAll() ============

@@ -10,11 +10,13 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
+        private readonly ICacheService _cache;
 
-        public EmpleadoService(AppDbContext context, DbResilienceService dbResilience)
+        public EmpleadoService(AppDbContext context, DbResilienceService dbResilience, ICacheService cache)
         {
             _context = context;
             _dbResilience = dbResilience;
+            _cache = cache;
         }
 
         public async Task<PagedResult<EmpEmpleadoDto>> GetAllAsync(QueryParams? queryParams = null)
@@ -48,7 +50,11 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<EmpEmpleadoDto?> GetByIdAsync(int id)
         {
-            return await _context.EmpEmpleado
+            var key = $"cache:empleado:{id}";
+            var cached = await _cache.GetAsync<EmpEmpleadoDto>(key);
+            if (cached is not null) return cached;
+
+            var empleado = await _context.EmpEmpleado
                 .AsNoTracking()
                 .Where(e => e.id == id)
                 .Select(e => new EmpEmpleadoDto
@@ -62,6 +68,11 @@ namespace WebAPIDevSecOps.Services
                     RowVersion = e.RowVersion
                 })
                 .FirstOrDefaultAsync();
+
+            if (empleado is not null)
+                await _cache.SetAsync(key, empleado, TimeSpan.FromSeconds(60));
+
+            return empleado;
         }
 
         public async Task<PagedResult<EmpEmpleadoDto>> SearchAsync(string? texto, int? idTipoEmpleado, QueryParams? queryParams = null)
@@ -200,6 +211,8 @@ namespace WebAPIDevSecOps.Services
 
             _context.Entry(empleado).State = EntityState.Modified;
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:empleado:{id}");
         }
 
         public async Task DeleteAsync(int id, EmpEmpleadoDeleteDto dto)
@@ -222,6 +235,8 @@ namespace WebAPIDevSecOps.Services
 
             _context.EmpEmpleado.Remove(empleado);
             await _dbResilience.SaveChangesAsync(_context);
+
+            await _cache.RemoveAsync($"cache:empleado:{id}");
         }
     }
 }

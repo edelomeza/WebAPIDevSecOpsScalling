@@ -6,6 +6,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -14,10 +15,19 @@ namespace UnitTest.Empleado;
 public class GetTests
 {
     private readonly DbResilienceService _dbResilience;
+    private readonly Mock<ICacheService> _cacheMock;
 
     public GetTests()
     {
         _dbResilience = CreateDbResilience();
+        _cacheMock = new Mock<ICacheService>();
+        _cacheMock
+            .Setup(x => x.GetOrCreateAsync(
+                It.IsAny<string>(),
+                It.IsAny<Func<Task<PagedResult<EmpEmpleadoDto>>>>(),
+                It.IsAny<TimeSpan?>()))
+            .Returns<string, Func<Task<PagedResult<EmpEmpleadoDto>>>, TimeSpan?>(
+                (_, factory, _) => factory());
     }
 
     private static DbResilienceService CreateDbResilience()
@@ -29,7 +39,7 @@ public class GetTests
 
     private EmpleadoController CreateController(AppDbContext context)
     {
-        return new EmpleadoController(new EmpleadoService(context, _dbResilience));
+        return new EmpleadoController(new EmpleadoService(context, _dbResilience, _cacheMock.Object));
     }
 
     // ============ GET ALL ============

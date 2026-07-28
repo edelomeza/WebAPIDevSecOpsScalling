@@ -8,6 +8,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -16,10 +17,12 @@ namespace UnitTest.Clientes
     public class UpdateTests
     {
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
 
         public UpdateTests()
         {
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -31,7 +34,7 @@ namespace UnitTest.Clientes
 
         private ClienteController CreateController(AppDbContext context)
         {
-            return new ClienteController(new ClienteService(context, _dbResilience));
+            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object));
         }
 
         private static CliCliente CreateSeedCliente(string nombre = "Cliente Test", string email = "cliente@test.com", string telefono = "5512345678")
@@ -75,6 +78,7 @@ namespace UnitTest.Clientes
             var result = await controller.Update(cliente.id, dto);
 
             result.Should().BeOfType<NoContentResult>();
+            _cacheMock.Verify(x => x.RemoveAsync($"cache:cliente:{cliente.id}"), Times.Once);
         }
 
         [Fact]

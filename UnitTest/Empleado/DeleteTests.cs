@@ -8,6 +8,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -16,10 +17,12 @@ namespace UnitTest.Empleado;
 public class DeleteTests
 {
     private readonly DbResilienceService _dbResilience;
+    private readonly Mock<ICacheService> _cacheMock;
 
     public DeleteTests()
     {
         _dbResilience = CreateDbResilience();
+        _cacheMock = new Mock<ICacheService>();
     }
 
     private static DbResilienceService CreateDbResilience()
@@ -31,7 +34,7 @@ public class DeleteTests
 
     private EmpleadoController CreateController(AppDbContext context)
     {
-        return new EmpleadoController(new EmpleadoService(context, _dbResilience));
+        return new EmpleadoController(new EmpleadoService(context, _dbResilience, _cacheMock.Object));
     }
 
     private async Task<EmpEmpleado> SeedEmpleadoAsync(AppDbContext context, string nombre = "Juan")
@@ -66,6 +69,7 @@ public class DeleteTests
         await controller.Delete(emp.id, dto);
 
         context.EmpEmpleado.Count().Should().Be(0);
+        _cacheMock.Verify(x => x.RemoveAsync($"cache:empleado:{emp.id}"), Times.Once);
     }
 
     [Fact]

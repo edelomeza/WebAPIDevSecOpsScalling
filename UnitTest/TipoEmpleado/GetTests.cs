@@ -1,17 +1,33 @@
 using FluentAssertions;
+using Moq;
 using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 
 namespace UnitTest.TipoEmpleado;
 
 public class GetTests
 {
+    private readonly Mock<ICacheService> _cacheMock;
+
+    public GetTests()
+    {
+        _cacheMock = new Mock<ICacheService>();
+        _cacheMock
+            .Setup(x => x.GetOrCreateAsync(
+                It.IsAny<string>(),
+                It.IsAny<Func<Task<PagedResult<EmpCatTipoEmpleadoDto>>>>(),
+                It.IsAny<TimeSpan?>()))
+            .Returns<string, Func<Task<PagedResult<EmpCatTipoEmpleadoDto>>>, TimeSpan?>(
+                (_, factory, _) => factory());
+    }
+
     private TipoEmpleadoController CreateController(AppDbContext context)
     {
-        return new TipoEmpleadoController(new WebAPIDevSecOps.Services.TipoEmpleadoService(context));
+        return new TipoEmpleadoController(new WebAPIDevSecOps.Services.TipoEmpleadoService(context, _cacheMock.Object));
     }
 
     // ============ GET ALL ============

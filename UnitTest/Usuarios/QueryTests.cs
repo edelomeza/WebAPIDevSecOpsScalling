@@ -17,6 +17,7 @@ namespace UnitTest.Usuarios
     {
         private readonly Mock<IPasswordHasherService> _hasherMock;
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
         private const string FakeHash = "$argon2id$v=19$m=16384,t=2,p=1$test$hash";
 
         public QueryTests()
@@ -24,6 +25,7 @@ namespace UnitTest.Usuarios
             _hasherMock = new Mock<IPasswordHasherService>();
             _hasherMock.Setup(h => h.HashPassword(It.IsAny<string>())).Returns(FakeHash);
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -35,7 +37,7 @@ namespace UnitTest.Usuarios
 
         private UsuarioController CreateController(AppDbContext context)
         {
-            return new UsuarioController(new UsuarioService(context, _hasherMock.Object, _dbResilience));
+            return new UsuarioController(new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object));
         }
 
         private AppDbContext SeedUsers(params string[] nombres)
@@ -156,7 +158,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_ReturnsMatchingUsers()
         {
             var context = SeedUsers("Eduardo", "Edel", "Maria", "Jose");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("ed");
 
@@ -168,7 +170,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_RespectsMaxResultados()
         {
             var context = SeedUsers("admin1", "admin2", "admin3", "user1");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("admin", 2);
 
@@ -179,7 +181,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_ReturnsEmpty_WhenNoMatch()
         {
             var context = SeedUsers("Eduardo", "Edel");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("xyz");
 
@@ -190,7 +192,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_IsCaseInsensitive()
         {
             var context = SeedUsers("Eduardo", "edel", "EDUARDO");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("EDUARDO");
 
@@ -201,7 +203,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_SpecialChars_ReturnsMatch()
         {
             var context = SeedUsers("José", "Maria", "Jose");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("Jos");
 
@@ -212,7 +214,7 @@ namespace UnitTest.Usuarios
         public async Task Autocomplete_ReturnsOrderedByName()
         {
             var context = SeedUsers("Zeta", "Alpha", "Beta");
-            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience);
+            var service = new UsuarioService(context, _hasherMock.Object, _dbResilience, _cacheMock.Object);
 
             var result = await service.AutocompleteAsync("a");
 

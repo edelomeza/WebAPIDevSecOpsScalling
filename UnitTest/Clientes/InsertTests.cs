@@ -7,6 +7,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -15,10 +16,12 @@ namespace UnitTest.Clientes
     public class InsertTests
     {
         private readonly DbResilienceService _dbResilience;
+        private readonly Mock<ICacheService> _cacheMock;
 
         public InsertTests()
         {
             _dbResilience = CreateDbResilience();
+            _cacheMock = new Mock<ICacheService>();
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -30,7 +33,7 @@ namespace UnitTest.Clientes
 
         private ClienteController CreateController(AppDbContext context)
         {
-            return new ClienteController(new ClienteService(context, _dbResilience));
+            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object));
         }
 
         // ============ Controller Response ============

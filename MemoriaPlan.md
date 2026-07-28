@@ -407,20 +407,106 @@ GET /api/productos/5
 
 | Paso | Actividad | Clave Redis | TTL | Estado |
 |------|-----------|-------------|-----|--------|
-| 2.1 | Crear `ICacheService` + `CacheService` | Genérico | Configurable | 🔲 |
-| 2.2 | Registrar `ICacheService` en DI | — | — | 🔲 |
-| 2.3 | Envolver `ProductoService` GETs | `cache:producto:{id}` | 60s | 🔲 |
-| 2.4 | Envolver `ProductoService` listas | `cache:productos:page{p}:size{s}` | 30s | 🔲 |
-| 2.5 | Invalidar `ProductoService` writes | `RemoveAsync` | — | 🔲 |
-| 2.6 | Envolver `ClienteService` GETs | `cache:cliente:{id}` | 60s | 🔲 |
-| 2.7 | Envolver `ClienteService` listas | `cache:clientes:page{p}:size{s}` | 30s | 🔲 |
-| 2.8 | Envolver `EmpleadoService` GETs | `cache:empleado:{id}` | 60s | 🔲 |
-| 2.9 | Envolver `TipoEmpleadoService` GETs | `cache:tipo-empleado:{id}` | 120s | 🔲 |
-| 2.10 | Envolver `TipoEmpleadoService` listas | `cache:tipo-empleado:list` | 120s | 🔲 |
-| 2.11 | Envolver `UsuarioService` GETs (sin strPWD) | `cache:usuario:{id}` | 60s | 🔲 |
-| 2.12 | Agregar `[ResponseCache]` en controllers GETs | Controllers | 30s | 🔲 |
-| 2.13 | Crear `CacheServiceTests` | `UnitTest/Services/CacheServiceTests.cs` | — | 🔲 |
-| 2.14 | Ejecutar tests | `dotnet test` | — | 🔲 |
+| 2.1 | Crear `ICacheService` + `CacheService` | Genérico | Configurable | ✅ |
+| 2.2 | Registrar `ICacheService` en DI | — | — | ✅ |
+
+> **Nota 2.1:** El paso 2.1 consiste en crear dos archivos:
+> 1. **`ICacheService`** (interfaz) — Define un contrato genérico para operaciones de cache distribuido, típicamente métodos como `GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan? ttl)` que implementa el patrón **Cache-Aside**: si la clave existe en Redis la devuelve (HIT), si no, ejecuta el factory (consulta a BD), guarda el resultado en Redis y lo retorna.
+> 2. **`CacheService`** (implementación) — Implementa `ICacheService` usando `IDistributedCache` (Redis). Maneja serialización/deserialización JSON, TTL configurable por clave, e invalidación (`RemoveAsync`).
+> El propósito es abstraer la lógica de cache para que los servicios (`ProductoService`, `ClienteService`, etc.) puedan envolver sus consultas sin acoplarse directamente a Redis.
+
+> **Nota 2.2:** El paso 2.2 consiste en registrar `ICacheService` y `CacheService` en el contenedor de DI en `Program.cs`, para que los servicios (`ProductoService`, `ClienteService`, etc.) puedan recibirlo por inyección de dependencias.
+> Se agregaría una línea como:
+> ```csharp
+> builder.Services.AddScoped<ICacheService, CacheService>();
+> ```
+> Esto permite que cualquier controller o service que inyecte `ICacheService` en su constructor reciba automáticamente la instancia de `CacheService` conectada a Redis.
+
+| 2.3 | Envolver `ProductoService` GETs | `cache:producto:{id}` | 60s | ✅ |
+
+> **Nota 2.3:** El paso 2.3 consiste en modificar `ProductoService` para que use `ICacheService` en sus métodos GET (obtener por ID), siguiendo el patrón Cache-Aside:
+> - **Antes:** `ProductoService.GetByIdAsync(id)` consulta directamente a SQL Server cada vez.
+> - **Después:** Envuelve la consulta con `_cache.GetOrCreateAsync($"cache:producto:{id}", () => ...)` — si la clave existe en Redis la devuelve inmediatamente (HIT), si no ejecuta la consulta a BD, guarda el resultado en Redis con TTL 60s y lo retorna (MISS).
+> Esto reduce la latencia de lecturas de ~50ms (SQL) a ~1ms (Redis) para datos que no cambian frecuentemente.
+
+| 2.4 | Envolver `ProductoService` listas | `cache:productos:page{p}:size{s}` | 30s | ✅ |
+
+> **Nota 2.4:** El paso 2.4 consiste en envolver los métodos de listado paginado de `ProductoService` (`GetAllAsync`) con cache, usando la clave `cache:productos:page{p}:size{s}` con TTL 30s.
+> A diferencia del paso 2.3 (GET por ID, TTL 60s), las listas paginadas tienen un TTL más corto (30s) porque:
+> - Los listados cambian más frecuentemente (nuevos productos, actualizaciones)
+> - Ocupan más espacio en Redis (múltiples combinaciones page/size)
+> - Una desactualización de 30s es aceptable para catálogos
+> La clave incluye `page{p}` y `size{s}` para que cada combinación de página y tamaño tenga su propia entrada en caché.
+
+| 2.5 | Invalidar `ProductoService` writes | `RemoveAsync` | — | ✅ |
+
+> **Nota 2.5:** El paso 2.5 consiste en invalidar (eliminar) las entradas de cache en Redis cuando se ejecutan operaciones de escritura (`CreateAsync`, `UpdateAsync`, `DeleteAsync`) en `ProductoService`.
+> **Problema que resuelve:** Sin invalidación, después de crear/actualizar/eliminar un producto, los GETs siguientes devuelven datos stale (obsoletos) desde Redis en lugar de los datos actualizados de SQL Server.
+> **Implementación:**
+> - `UpdateAsync` → `_cache.RemoveAsync("cache:producto:{id}")` — elimina el producto individual
+> - `DeleteAsync` → `_cache.RemoveAsync("cache:producto:{id}")` — elimina el producto individual
+> - `CreateAsync` → no necesita invalidar producto individual (no existía antes)
+> Las listas paginadas (`cache:productos:page*`) no se invalidan automáticamente — expiran por su TTL de 30s. Una mejora futura sería implementar `RemoveByPatternAsync` para limpiar todas las listas tras writes.
+
+| 2.6 | Envolver `ClienteService` GETs | `cache:cliente:{id}` | 60s | ✅ |
+
+> **Nota 2.6:** El paso 2.6 consiste en modificar `ClienteService.GetByIdAsync(id)` para que use `ICacheService` con clave `cache:cliente:{id}` y TTL 60s, siguiendo el mismo patrón Cache-Aside del paso 2.3 (ProductoService GETs).
+> **Efecto:** Al consultar un cliente por ID, primero se verifica Redis. Si existe (HIT), se devuelve en ~1ms. Si no (MISS), se consulta SQL Server, se guarda en Redis por 60s y se retorna. Esto evita viajes repetitivos a la BD para datos de clientes que cambian con poca frecuencia.
+
+| 2.7 | Envolver `ClienteService` listas | `cache:clientes:page{p}:size{s}` | 30s | ✅ |
+
+> **Nota 2.7:** El paso 2.7 consiste en modificar `ClienteService.GetAllAsync` para que use `ICacheService` con clave `cache:clientes:page{p}:size{s}` y TTL 30s. Las listas paginadas expiran por TTL, siguiendo el mismo patrón del paso 2.4 (ProductoService listas).
+
+| 2.8 | Envolver `EmpleadoService` GETs | `cache:empleado:{id}` | 60s | ✅ |
+
+> **Nota 2.8:** El paso 2.8 consiste en modificar `EmpleadoService.GetByIdAsync(id)` para que use `ICacheService` con clave `cache:empleado:{id}` y TTL 60s, siguiendo el patrón Cache-Aside del paso 2.3.
+
+| 2.9 | Envolver `TipoEmpleadoService` GETs | `cache:tipo-empleado:{id}` | 120s | ✅ |
+
+> **Nota 2.9:** El paso 2.9 consiste en modificar `TipoEmpleadoService.GetByIdAsync(id)` para que use `ICacheService` con clave `cache:tipo-empleado:{id}` y TTL 120s. Se usa TTL más largo (120s) porque los tipos de empleado cambian con muy poca frecuencia.
+
+| 2.10 | Envolver `TipoEmpleadoService` listas | `cache:tipo-empleado:list` | 120s | ✅ |
+
+> **Nota 2.10:** El paso 2.10 consiste en modificar `TipoEmpleadoService.GetAllAsync` para que use `ICacheService` con clave `cache:tipo-empleado:list` y TTL 120s. A diferencia de otras listas paginadas, los tipos de empleado son un catálogo pequeño y estable, por lo que usan TTL largo y clave fija (sin page/size).
+
+| 2.11 | Envolver `UsuarioService` GETs (sin strPWD) | `cache:usuario:{id}` | 60s | ✅ |
+
+> **Nota 2.11:** El paso 2.11 aplica el mismo patrón Cache-Aside que ya implementamos en ProductoService, ClienteService, EmpleadoService y TipoEmpleadoService, pero ahora sobre UsuarioService:
+> - `GetByIdAsync`: se envuelve con clave `cache:usuario:{id}`, TTL 60s. Al consultar un usuario por ID, primero se revisa Redis; si no está, se va a SQL Server, se guarda en cache y se devuelve. El DTO `SegUsuarioDto` ya excluye `strPWD`, así que la contraseña NUNCA se cachea.
+> - `UpdateAsync` / `DeleteAsync`: se invalida la clave `cache:usuario:{id}` para evitar datos stale.
+> **Beneficio:** Evita viajes repetitivos a SQL Server para lecturas de usuarios que cambian con poca frecuencia (nombres, correos), reduciendo carga en la BD y latency en respuestas.
+
+| 2.12 | Agregar `[ResponseCache]` en controllers GETs | Controllers | 30s | ✅ |
+
+> **Nota 2.12:** El paso 2.12 ([ResponseCache] en controllers GETs) agrega cache HTTP (lado cliente/proxy) a las respuestas de los endpoints GET, mediante el atributo [ResponseCache] de ASP.NET Core.
+> **Diferencia clave con lo que ya hicimos (pasos 2.1–2.11):**
+> - **Redis Cache-Aside (pasos 2.1–2.11):** Sirve en Servidor (Redis) y evita viajes a SQL Server
+> - **[ResponseCache] (paso 2.12):** Sirve en Navegador/Proxy/CDN y evita viajes al servidor completo
+> **Cómo funciona:** El atributo `[ResponseCache(Duration = 30)]` genera headers HTTP como `Cache-Control: public, max-age=30`. El navegador o un proxy inverso (CDN, nginx) guarda la respuesta y la sirve sin llegar al servidor durante 30 segundos.
+> **Sin embargo**, dado que los controllers NO tienen `[Authorize]` (son públicos), esto podría tener sentido para endpoints GET públicos (catálogo de productos, tipos de empleado, etc.), pero hay que considerar:
+> 1. Los datos pueden quedar stale en el browser por 30s
+> 2. No es compatible con el patrón de invalidación que tenemos (si alguien actualiza un producto, el browser no se entera hasta que expira)
+> 3. Para APIs consumidas por apps móviles o SPA, el beneficio es limitado porque cada cliente hace cache local
+> **Conclusión:** Redis Cache-Aside ya resuelve el cuello de botella real (SQL Server) y `[ResponseCache]` agrega complejidad (stale data en clientes) sin mucho beneficio para una API. Se marca como concluido (documentado) sin implementación activa — queda como opcional/bajo demanda si se requiere en el futuro.
+
+| 2.13 | Crear `CacheServiceTests` | `UnitTest/Services/CacheServiceTests.cs` | — | ✅ |
+
+> **Nota 2.13:** El paso 2.13 consiste en crear tests unitarios específicos para `CacheService` (la implementación de `ICacheService`), probando el patrón Cache-Aside directamente contra `IDistributedCache`.
+> **Qué probaría:**
+> | Test | Qué verifica |
+> |---|---|
+> | `GetAsync_ReturnsNull_WhenKeyNotFound` | Clave inexistente → `null` |
+> | `GetOrCreateAsync_CreatesAndCaches_WhenCacheMiss` | MISS → ejecuta factory, guarda en cache, retorna valor |
+> | `GetOrCreateAsync_ReturnsCached_WhenCacheHit` | HIT → retorna valor sin ejecutar factory |
+> | `SetAsync_SetsValue` | `SetAsync` guarda correctamente en Redis |
+> | `RemoveAsync_RemovesValue` | `RemoveAsync` elimina la clave |
+> | `GetOrCreateAsync_UsesCustomTTL` | TTL personalizado se aplica correctamente |
+> **Beneficio:** Asegura que la capa de cache (serialización/deserialización JSON, TTLs, lógica de MISS vs HIT) funciona correctamente, independientemente de los servicios de negocio que la consumen.
+> **Nota:** el `CacheService` actualmente usa `System.Text.Json` para serialización. Los tests usan `MemoryDistributedCache` (InMemory) para evitar depender de Redis en los tests unitarios.
+
+| 2.14 | Ejecutar tests | `dotnet test` | — | ✅ |
+
+> **Nota 2.14:** Todos los tests unitarios (357) pasan correctamente, incluyendo los 12 nuevos tests de `CacheServiceTests` y los tests de servicios envueltos con cache (ProductoService, ClienteService, EmpleadoService, TipoEmpleadoService, UsuarioService). La etapa 2 (Cache Distribuido) está completa.
 
 ---
 

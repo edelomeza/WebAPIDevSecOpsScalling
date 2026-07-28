@@ -8,6 +8,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -16,10 +17,12 @@ namespace UnitTest.Empleado;
 public class UpdateTests
 {
     private readonly DbResilienceService _dbResilience;
+    private readonly Mock<ICacheService> _cacheMock;
 
     public UpdateTests()
     {
         _dbResilience = CreateDbResilience();
+        _cacheMock = new Mock<ICacheService>();
     }
 
     private static DbResilienceService CreateDbResilience()
@@ -31,7 +34,7 @@ public class UpdateTests
 
     private EmpleadoController CreateController(AppDbContext context)
     {
-        return new EmpleadoController(new EmpleadoService(context, _dbResilience));
+        return new EmpleadoController(new EmpleadoService(context, _dbResilience, _cacheMock.Object));
     }
 
     private async Task<EmpEmpleado> SeedEmpleadoAsync(AppDbContext context, string nombre = "Original", string? curp = null)
@@ -64,6 +67,7 @@ public class UpdateTests
         var result = await controller.Update(emp.id, dto);
 
         result.Should().BeOfType<NoContentResult>();
+        _cacheMock.Verify(x => x.RemoveAsync($"cache:empleado:{emp.id}"), Times.Once);
     }
 
     [Fact]

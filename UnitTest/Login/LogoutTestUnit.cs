@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -30,7 +31,7 @@ namespace UnitTest.Login
         {
             cacheMock ??= new Mock<IDistributedCache>();
             var service = new TokenBlacklistService(cacheMock.Object);
-            var controller = new LogoutController(service);
+            var controller = new LogoutController(service, NullLogger<LogoutController>.Instance);
             controller.ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext()

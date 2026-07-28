@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
@@ -120,6 +120,11 @@ var healthChecks = builder.Services.AddHealthChecks()
 
 if (!useInMemory)
 {
+    healthChecks.AddRedis(
+        redisConnectionString: builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379",
+        name: "redis",
+        tags: new[] { "redis", "cache" });
+
     healthChecks.AddSqlServer(
         connectionString: builder.Configuration.GetConnectionString("DefaultConnection"),
         healthQuery: "SELECT 1;",
@@ -259,7 +264,17 @@ builder.Services.AddAuthorization(options =>
         policy => policy.RequireRole("Admin"));
 });
 
-builder.Services.AddMemoryCache();
+if (useInMemory)
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+else
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+    });
+}
 
 builder.Services.AddResponseCaching();
 
@@ -268,6 +283,7 @@ builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Co
 builder.Services.Configure<ResilienceOptions>(builder.Configuration.GetSection("Resilience"));
 builder.Services.AddSingleton<DbResilienceService>();
 builder.Services.AddScoped<ILoginService, LoginService>();
+builder.Services.AddSingleton<WebAPIDevSecOps.Interfaces.ITokenBlacklistService, WebAPIDevSecOps.Services.TokenBlacklistService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<IEmpleadoService, EmpleadoService>();
 builder.Services.AddScoped<ITipoEmpleadoService, TipoEmpleadoService>();
@@ -332,8 +348,6 @@ if (!useInMemory)
     }
 }
 
-TokenBlacklist.Initialize(app.Services.GetRequiredService<IServiceScopeFactory>());
-
 if (app.Environment.IsDevelopment())
 {
     var warmupSw = Stopwatch.StartNew();
@@ -369,11 +383,29 @@ app.Use(async (context, next) =>
         .ToString()
         .Replace("Bearer ", "");
 
-    if (!string.IsNullOrEmpty(token) && TokenBlacklist.IsBlacklisted(token))
+    if (!string.IsNullOrEmpty(token))
     {
-        context.Response.StatusCode = 401;
-        await context.Response.WriteAsync("Token inválido");
-        return;
+        try
+        {
+            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(token);
+            var jti = jwt?.Id;
+            if (!string.IsNullOrEmpty(jti))
+            {
+                var blacklistService = context.RequestServices.GetRequiredService<WebAPIDevSecOps.Interfaces.ITokenBlacklistService>();
+                if (await blacklistService.IsBlacklistedAsync(jti))
+                {
+                    context.Response.StatusCode = 401;
+                    await context.Response.WriteAsync("Token inválido");
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "Error al validar blacklist de token");
+        }
     }
 
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");

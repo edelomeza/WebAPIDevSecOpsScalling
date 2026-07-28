@@ -30,7 +30,6 @@ public class AutocompleteIntegrationTests : IClassFixture<WebApplicationFactory<
 
     public Task InitializeAsync()
     {
-        TokenBlacklist.Clear();
         return Task.CompletedTask;
     }
 

@@ -35,7 +35,6 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
 
     public Task InitializeAsync()
     {
-        TokenBlacklist.Clear();
         return Task.CompletedTask;
     }
 
@@ -113,8 +112,7 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
     [Fact]
     public async Task Should_Reject_Blacklisted_Token()
     {
-        var token = TokenHelper.GenerateValidToken(JwtKey, JwtIssuer, JwtAudience);
-        TokenBlacklist.Add(token);
+        var token = await UnitTest.Common.BlacklistHelper.GenerateAndBlacklistTokenAsync(_factory.Services, "01123581321345589144233377610987", "edelmeza.com", "edelmeza.com");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/venta");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

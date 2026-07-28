@@ -28,7 +28,6 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
 
     public Task InitializeAsync()
     {
-        TokenBlacklist.Clear();
         return Task.CompletedTask;
     }
 

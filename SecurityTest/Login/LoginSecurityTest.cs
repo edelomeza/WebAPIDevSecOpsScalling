@@ -12,16 +12,18 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using WebAPIDevSecOps.Services;
+using UnitTest.Common;
 
 namespace SecurityTest.Login
 {
     public class LoginSecurityTest : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
     {
+        private readonly WebApplicationFactory<Program> _factory;
         private readonly HttpClient _client;
 
         public LoginSecurityTest(WebApplicationFactory<Program> factory)
         {
-            _client = factory.WithWebHostBuilder(builder =>
+            _factory = factory.WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("ConnectionStrings:DefaultConnection", "Server=.;Database=Test;Trusted_Connection=True;");
                 builder.UseSetting("Jwt:Key", "01123581321345589144233377610987");
@@ -29,12 +31,12 @@ namespace SecurityTest.Login
                 builder.UseSetting("Jwt:Audience", "edelmeza.com");
                 builder.UseSetting("UseInMemoryDatabase", "true");
                 builder.UseSetting("InMemoryDatabaseName", $"LoginSecurityDb_{Guid.NewGuid():N}");
-            }).CreateClient();
+            });
+            _client = _factory.CreateClient();
         }
 
         public Task InitializeAsync()
         {
-            TokenBlacklist.Clear();
             return Task.CompletedTask;
         }
 
@@ -82,9 +84,7 @@ namespace SecurityTest.Login
         [Fact]
         public async Task Should_Block_Blacklisted_Token()
         {
-            var token = "fake_token";
-
-            TokenBlacklist.Add(token); // simula logout
+            var token = await UnitTest.Common.BlacklistHelper.GenerateAndBlacklistTokenAsync(_factory.Services, "01123581321345589144233377610987", "edelmeza.com", "edelmeza.com");
 
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/secure");
             request.Headers.Authorization =
@@ -176,7 +176,7 @@ namespace SecurityTest.Login
             secondLogout.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             var secondResponse = await _client.SendAsync(secondLogout);
 
-            Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, secondResponse.StatusCode);
         }
 
         [Fact]

@@ -12,16 +12,18 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using WebAPIDevSecOps.Services;
+using UnitTest.Common;
 
 namespace IntegrationTest.Login
 {
     public class LoginIntegrationTest : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
     {
+        private readonly WebApplicationFactory<Program> _factory;
         private readonly HttpClient _client;
 
         public LoginIntegrationTest(WebApplicationFactory<Program> factory)
         {
-            _client = factory.WithWebHostBuilder(builder =>
+            _factory = factory.WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("ConnectionStrings:DefaultConnection", "Server=.;Database=Test;Trusted_Connection=True;");
                 builder.UseSetting("Jwt:Key", "01123581321345589144233377610987");
@@ -29,12 +31,12 @@ namespace IntegrationTest.Login
                 builder.UseSetting("Jwt:Audience", "edelmeza.com");
                 builder.UseSetting("UseInMemoryDatabase", "true");
                 builder.UseSetting("InMemoryDatabaseName", $"LoginIntegrationDb_{Guid.NewGuid():N}");
-            }).CreateClient();
+            });
+            _client = _factory.CreateClient();
         }
 
         public Task InitializeAsync()
         {
-            TokenBlacklist.Clear();
             return Task.CompletedTask;
         }
 
@@ -119,9 +121,7 @@ namespace IntegrationTest.Login
         [Fact]
         public async Task Should_Reject_Blacklisted_Token()
         {
-            var token = GenerateValidToken();
-
-            TokenBlacklist.Add(token);
+            var token = await UnitTest.Common.BlacklistHelper.GenerateAndBlacklistTokenAsync(_factory.Services, "01123581321345589144233377610987", "edelmeza.com", "edelmeza.com");
 
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/secure");
             request.Headers.Authorization =

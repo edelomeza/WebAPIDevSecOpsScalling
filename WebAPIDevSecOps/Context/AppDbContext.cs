@@ -81,17 +81,12 @@ namespace WebAPIDevSecOps.Context
                 .HasForeignKey(vd => vd.idProProducto)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<SegTokenBlacklist>(entity =>
-            {
-                entity.ToTable("SegTokenBlacklist", t => t.ExcludeFromMigrations());
-            });
         }
 
         public DbSet<CliCliente> CliCliente { get; set; } = default!;
         public DbSet<SegUsuario> SegUsuario { get; set; } = default!;
         public DbSet<EmpEmpleado> EmpEmpleado { get; set; } = default!;
         public DbSet<ProProducto> ProProducto { get; set; } = default!;
-        public DbSet<SegTokenBlacklist> SegTokenBlacklist { get; set; } = default!;
         public DbSet<VenCatEstado> VenCatEstado { get; set; } = default!;
         public DbSet<VenVenta> VenVenta { get; set; } = default!;
         public DbSet<VenVentaDetalle> VenVentaDetalle { get; set; } = default!;

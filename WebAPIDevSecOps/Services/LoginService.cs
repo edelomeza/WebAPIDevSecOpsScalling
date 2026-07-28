@@ -1,6 +1,7 @@
-﻿using System.Diagnostics;
+﻿
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -11,6 +12,24 @@ using WebAPIDevSecOps.Interfaces;
 
 namespace WebAPIDevSecOps.Services
 {
+    // El paso 1.11 migra LoginService de IMemoryCache a IDistributedCache.
+    // Actualmente usa IMemoryCache para trackear intentos fallidos y lockout por usuario (líneas 21, 28).
+    // Con IDistributedCache (Redis), el conteo de intentos fallidos y bloqueos será compartido entre todas las
+    // instancias EC2, evitando que un atacante pueda reintentar por otra instancia.
+    // Las claves Redis a usar (según sección 9 del plan):
+    // - attempts:{user} — contador de intentos fallidos (TTL 30 min)
+    // - lockout:{user} — flag de bloqueo (TTL 15 min)
+    // Cambios necesarios:
+    // 1. IMemoryCache _cache → IDistributedCache _cache
+    // 2. AddMemoryCache() ya fue reemplazado por AddStackExchangeRedisCache() (paso 1.2)
+    // 3. Usar SetStringAsync/GetStringAsync con DistributedCacheEntryOptions en lugar de Set/Get de IMemoryCache
+    // 4. Serialización/deserialización manual de enteros (string → int)
+    //    LoginService migrado de IMemoryCache a IDistributedCache:
+    //Lockout check: TryGetValue → GetStringAsync
+    //Failed attempts: contador serializado como string con int.TryParse
+    //Removes: Remove → RemoveAsync
+    //Sets: Set → SetStringAsync con DistributedCacheEntryOptions
+    //RecordFailedAttempt renombrado a RecordFailedAttemptAsync(async)
     public class LoginService : ILoginService
     {
         private readonly AppDbContext _context;
@@ -18,14 +37,14 @@ namespace WebAPIDevSecOps.Services
         private readonly IPasswordHasherService _passwordHasher;
         private readonly DbResilienceService _dbResilience;
         private readonly ILogger<LoginService> _logger;
-        private readonly IMemoryCache _cache;
+        private readonly IDistributedCache _cache;
 
         private const string FakeHash = "$argon2id$v=19$m=65536,t=3,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
         private const int MaxFailedAttempts = 5;
         private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(30);
 
-        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IMemoryCache cache)
+        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IDistributedCache cache)
         {
             _context = context;
             _configuration = configuration;
@@ -41,7 +60,8 @@ namespace WebAPIDevSecOps.Services
 
             var username = request.User.Trim();
 
-            if (_cache.TryGetValue($"lockout:{username}", out _))
+            var lockoutValue = await _cache.GetStringAsync($"lockout:{username}", ct);
+            if (lockoutValue is not null)
             {
                 throw new UnauthorizedAccessException("Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo más tarde.");
             }
@@ -63,12 +83,12 @@ namespace WebAPIDevSecOps.Services
 
             if (usuario == null || !isValid)
             {
-                RecordFailedAttempt(username);
+                await RecordFailedAttemptAsync(username, ct);
                 throw new UnauthorizedAccessException("Credenciales inválidas.");
             }
 
-            _cache.Remove($"lockout:{username}");
-            _cache.Remove($"attempts:{username}");
+            await _cache.RemoveAsync($"lockout:{username}", ct);
+            await _cache.RemoveAsync($"attempts:{username}", ct);
 
             if (await Task.Run(() => _passwordHasher.NeedsRehash(usuario.strPWD), ct))
             {
@@ -85,24 +105,31 @@ namespace WebAPIDevSecOps.Services
             return new LoginResponse { Token = token };
         }
 
-        private void RecordFailedAttempt(string username)
+        private async Task RecordFailedAttemptAsync(string username, CancellationToken ct)
         {
             var attemptsKey = $"attempts:{username}";
             var attempts = 1;
 
-            if (_cache.TryGetValue(attemptsKey, out int currentAttempts))
+            var currentValue = await _cache.GetStringAsync(attemptsKey, ct);
+            if (currentValue is not null && int.TryParse(currentValue, out var currentAttempts))
             {
                 attempts = currentAttempts + 1;
             }
 
             if (attempts >= MaxFailedAttempts)
             {
-                _cache.Set($"lockout:{username}", true, LockoutDuration);
-                _cache.Remove(attemptsKey);
+                await _cache.SetStringAsync($"lockout:{username}", "1", new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = LockoutDuration
+                }, ct);
+                await _cache.RemoveAsync(attemptsKey, ct);
             }
             else
             {
-                _cache.Set(attemptsKey, attempts, AttemptWindow);
+                await _cache.SetStringAsync(attemptsKey, attempts.ToString(), new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = AttemptWindow
+                }, ct);
             }
         }
 

@@ -9,6 +9,7 @@ namespace SecurityTest.VentaDetalle;
 
 public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
 {
+    private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
     private const string JwtKey = "01123581321345589144233377610987";
     private const string JwtIssuer = "edelmeza.com";
@@ -16,7 +17,7 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
 
     public SecurityTests(WebApplicationFactory<Program> factory)
     {
-        _client = factory.WithWebHostBuilder(builder =>
+        _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:DefaultConnection", "Server=.;Database=Test;Trusted_Connection=True;");
             builder.UseSetting("Jwt:Key", JwtKey);
@@ -24,12 +25,12 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
             builder.UseSetting("Jwt:Audience", JwtAudience);
             builder.UseSetting("UseInMemoryDatabase", "true");
             builder.UseSetting("InMemoryDatabaseName", $"SecurityTestVentaDetalleDb_{Guid.NewGuid():N}");
-        }).CreateClient();
+        });
+        _client = _factory.CreateClient();
     }
 
     public Task InitializeAsync()
     {
-        TokenBlacklist.Clear();
         return Task.CompletedTask;
     }
 
@@ -86,8 +87,7 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
     [Fact]
     public async Task Should_Reject_Blacklisted_Token()
     {
-        var token = TokenHelper.GenerateValidToken(JwtKey, JwtIssuer, JwtAudience);
-        TokenBlacklist.Add(token);
+        var token = await UnitTest.Common.BlacklistHelper.GenerateAndBlacklistTokenAsync(_factory.Services, "01123581321345589144233377610987", "edelmeza.com", "edelmeza.com");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/ventadetalle");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

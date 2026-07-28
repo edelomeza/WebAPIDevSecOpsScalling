@@ -1,0 +1,14 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports: ["8080:8080"]
+    depends_on: [redis]
+    environment:
+      - ConnectionStrings:DefaultConnection=...
+      - Redis:ConnectionString=redis:6379

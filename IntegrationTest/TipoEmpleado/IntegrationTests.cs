@@ -33,7 +33,6 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
     public async Task InitializeAsync()
     {
-        TokenBlacklist.Clear();
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         db.EmpCatTipoEmpleado.RemoveRange(db.EmpCatTipoEmpleado);

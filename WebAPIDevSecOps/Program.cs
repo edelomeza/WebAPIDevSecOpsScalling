@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
@@ -120,6 +120,11 @@ var healthChecks = builder.Services.AddHealthChecks()
 
 if (!useInMemory)
 {
+    healthChecks.AddRedis(
+        redisConnectionString: builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379",
+        name: "redis",
+        tags: new[] { "redis", "cache" });
+
     healthChecks.AddSqlServer(
         connectionString: builder.Configuration.GetConnectionString("DefaultConnection"),
         healthQuery: "SELECT 1;",
@@ -259,7 +264,20 @@ builder.Services.AddAuthorization(options =>
         policy => policy.RequireRole("Admin"));
 });
 
-builder.Services.AddMemoryCache();
+// El paso 1.2 cambia builder.Services.AddMemoryCache() → builder.Services.AddStackExchangeRedisCache() en Program.cs:262.
+// Esto reemplaza el caché en memoria local (IMemoryCache) por Redis distribuido (IDistributedCache),
+// permitiendo que todas las instancias EC2 compartan el mismo estado de caché (blacklist, intentos de login, etc.).
+if (useInMemory)
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+else
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+    });
+}
 
 builder.Services.AddResponseCaching();
 
@@ -268,6 +286,7 @@ builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Co
 builder.Services.Configure<ResilienceOptions>(builder.Configuration.GetSection("Resilience"));
 builder.Services.AddSingleton<DbResilienceService>();
 builder.Services.AddScoped<ILoginService, LoginService>();
+builder.Services.AddSingleton<WebAPIDevSecOps.Interfaces.ITokenBlacklistService, WebAPIDevSecOps.Services.TokenBlacklistService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<IEmpleadoService, EmpleadoService>();
 builder.Services.AddScoped<ITipoEmpleadoService, TipoEmpleadoService>();
@@ -332,7 +351,7 @@ if (!useInMemory)
     }
 }
 
-TokenBlacklist.Initialize(app.Services.GetRequiredService<IServiceScopeFactory>());
+// 1.9 Eliminado TokenBlacklist.Initialize() — se reemplaza por inyección de ITokenBlacklistService en paso 1.10
 
 if (app.Environment.IsDevelopment())
 {
@@ -363,17 +382,38 @@ app.UseMiddleware<WebAPIDevSecOps.Middleware.RequestTimeoutMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.AuditLoggingMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.ExceptionHandlingMiddleware>();
 
+// El paso 1.10 reemplaza el middleware inline en Program.cs:381-392 que actualmente usa TokenBlacklist.IsBlacklisted(token) (clase estática ya eliminada) por una versión que inyecta ITokenBlacklistService vía context.RequestServices. Esto:
+// 1. Arregla la compilación (rota desde 1.6)
+// 2. Cambia de estático a inyectado: obtiene ITokenBlacklistService del DI y llama a IsBlacklistedAsync(jti)
+// 3. Extrae el JTI del token: necesita parsear el JWT para obtener el jti (similar a como lo hacía TokenBlacklist.TryReadToken)
+// 4. Convierte a async: usa IsBlacklistedAsync en lugar del método sincrónico estático
 app.Use(async (context, next) =>
 {
     var token = context.Request.Headers["Authorization"]
         .ToString()
         .Replace("Bearer ", "");
 
-    if (!string.IsNullOrEmpty(token) && TokenBlacklist.IsBlacklisted(token))
+    if (!string.IsNullOrEmpty(token))
     {
-        context.Response.StatusCode = 401;
-        await context.Response.WriteAsync("Token inválido");
-        return;
+        try
+        {
+            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(token);
+            var jti = jwt?.Id;
+            if (!string.IsNullOrEmpty(jti))
+            {
+                var blacklistService = context.RequestServices.GetRequiredService<WebAPIDevSecOps.Interfaces.ITokenBlacklistService>();
+                if (await blacklistService.IsBlacklistedAsync(jti))
+                {
+                    context.Response.StatusCode = 401;
+                    await context.Response.WriteAsync("Token inválido");
+                    return;
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");

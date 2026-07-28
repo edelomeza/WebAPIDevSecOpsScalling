@@ -1,7 +1,12 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Headers;
+using Microsoft.Extensions.Caching.Distributed;
+using Moq;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Services;
 
@@ -9,9 +14,23 @@ namespace UnitTest.Login
 {
     public class LogoutTestUnit
     {
-        private static LogoutController CreateController(string? token)
+        private static string GenerateTestToken()
         {
-            var controller = new LogoutController();
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("z9WkJ4l2m9VQX1x8bYl+q3hR0Fz9uT7e5K2pL8sD4fA="));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var token = new JwtSecurityToken(
+                claims: [new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())],
+                expires: DateTime.UtcNow.AddMinutes(60),
+                signingCredentials: creds
+            );
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private static LogoutController CreateController(string? token, Mock<IDistributedCache>? cacheMock = null)
+        {
+            cacheMock ??= new Mock<IDistributedCache>();
+            var service = new TokenBlacklistService(cacheMock.Object);
+            var controller = new LogoutController(service);
             controller.ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext()
@@ -26,36 +45,40 @@ namespace UnitTest.Login
         }
 
         [Fact]
-        public void Logout_ReturnsOk_WhenTokenProvided()
+        public async Task Logout_ReturnsOk_WhenTokenProvided()
         {
-            var controller = CreateController("test-token");
-            TokenBlacklist.CleanupExpired();
+            var token = GenerateTestToken();
+            var controller = CreateController(token);
 
-            var result = controller.Logout();
+            var result = await controller.Logout();
 
             result.Should().BeOfType<OkObjectResult>();
         }
 
         [Fact]
-        public void Logout_ReturnsUnauthorized_WhenNoToken()
+        public async Task Logout_ReturnsUnauthorized_WhenNoToken()
         {
             var controller = CreateController(null);
 
-            var result = controller.Logout();
+            var result = await controller.Logout();
 
             result.Should().BeOfType<UnauthorizedObjectResult>();
         }
 
         [Fact]
-        public void Logout_AddsTokenToBlacklist()
+        public async Task Logout_AddsTokenToBlacklist()
         {
-            var token = "token-to-blacklist";
-            var controller = CreateController(token);
-            TokenBlacklist.CleanupExpired();
+            var token = GenerateTestToken();
+            var cacheMock = new Mock<IDistributedCache>();
+            var controller = CreateController(token, cacheMock);
 
-            controller.Logout();
+            await controller.Logout();
 
-            Assert.True(TokenBlacklist.IsBlacklisted(token));
+            cacheMock.Verify(c => c.SetAsync(
+                It.Is<string>(k => k.StartsWith("blacklist:")),
+                It.IsAny<byte[]>(),
+                It.IsAny<DistributedCacheEntryOptions>(),
+                It.IsAny<CancellationToken>()), Times.Once);
         }
     }
 }

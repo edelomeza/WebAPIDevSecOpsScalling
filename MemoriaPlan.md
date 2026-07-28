@@ -359,6 +359,18 @@ Después (Escalable):
 | 1.13 | Crear tests TokenBlacklistService | `UnitTest/Login/TokenBlacklistServiceTests.cs` | ✅ |
 | 1.14 | Ejecutar y verificar tests | `dotnet test UnitTest` | ✅ |
 
+> **Nota 1.2:** Reemplaza el caché en memoria local (IMemoryCache) por Redis distribuido (IDistributedCache), permitiendo que todas las instancias EC2 compartan el mismo estado de caché (blacklist, intentos de login, etc.).
+
+> **Nota 1.4:** Abstrae el blacklist de tokens JWT usando IDistributedCache (Redis) en lugar de la clase estática TokenBlacklist. Métodos: AddAsync(jti, expiry) e IsBlacklistedAsync(jti). Permite que el blacklist sea compartido entre instancias EC2 al estar en Redis.
+
+> **Nota 1.5:** Implementa ITokenBlacklistService usando IDistributedCache (Redis) con clave `blacklist:{jti}`. AddAsync guarda el JTI en Redis con TTL hasta expiración del token; IsBlacklistedAsync verifica si existe.
+
+> **Nota 1.9:** Eliminado TokenBlacklist.Initialize() — se reemplaza por inyección de ITokenBlacklistService.
+
+> **Nota 1.10:** Reemplaza el middleware inline que usaba TokenBlacklist.IsBlacklisted(token) por una versión que inyecta ITokenBlacklistService vía context.RequestServices. Cambios: (1) arregla compilación, (2) cambia de estático a inyectado, (3) extrae el JTI del token, (4) convierte a async.
+
+> **Nota 1.11:** Migra LoginService de IMemoryCache a IDistributedCache. Con Redis, el conteo de intentos fallidos y bloqueos es compartido entre instancias EC2. Claves: `attempts:{user}` (TTL 30 min) y `lockout:{user}` (TTL 15 min). TryGetValue → GetStringAsync, Set → SetStringAsync, Remove → RemoveAsync.
+
 ---
 
 ### Etapa 2 — Cache Distribuido (Cache-Aside)

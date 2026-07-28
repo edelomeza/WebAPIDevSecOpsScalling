@@ -1,8 +1,4 @@
-﻿// El paso 1.5 crea la implementación TokenBlacklistService en Services/TokenBlacklistService.cs.
-// Implementa ITokenBlacklistService usando IDistributedCache (Redis) con clave blacklist:{jti}.
-// AddAsync guarda el JTI en Redis con TTL = lo que falte para expirar el token;
-// IsBlacklistedAsync verifica si existe. Reemplazará a la clase estática TokenBlacklist actual.
-using Microsoft.Extensions.Caching.Distributed;
+﻿using Microsoft.Extensions.Caching.Distributed;
 using WebAPIDevSecOps.Interfaces;
 
 namespace WebAPIDevSecOps.Services;

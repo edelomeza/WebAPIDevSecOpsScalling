@@ -1,6 +1,7 @@
 ﻿using Asp.Versioning;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using WebAPIDevSecOps.Interfaces;
 
 namespace WebAPIDevSecOps.Controllers
@@ -11,10 +12,12 @@ namespace WebAPIDevSecOps.Controllers
     public class LogoutController : ControllerBase
     {
         private readonly ITokenBlacklistService _blacklistService;
+        private readonly ILogger<LogoutController> _logger;
 
-        public LogoutController(ITokenBlacklistService blacklistService)
+        public LogoutController(ITokenBlacklistService blacklistService, ILogger<LogoutController> logger)
         {
             _blacklistService = blacklistService;
+            _logger = logger;
         }
 
         [HttpPost("logout")]
@@ -38,8 +41,9 @@ namespace WebAPIDevSecOps.Controllers
                         await _blacklistService.AddAsync(jti, TimeSpan.FromMinutes(60));
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogError(ex, "Error al blacklistear token");
                 }
 
                 return Ok(new { mensaje = "Sesión cerrada correctamente." });

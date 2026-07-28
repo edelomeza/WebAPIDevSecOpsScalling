@@ -264,9 +264,6 @@ builder.Services.AddAuthorization(options =>
         policy => policy.RequireRole("Admin"));
 });
 
-// El paso 1.2 cambia builder.Services.AddMemoryCache() → builder.Services.AddStackExchangeRedisCache() en Program.cs:262.
-// Esto reemplaza el caché en memoria local (IMemoryCache) por Redis distribuido (IDistributedCache),
-// permitiendo que todas las instancias EC2 compartan el mismo estado de caché (blacklist, intentos de login, etc.).
 if (useInMemory)
 {
     builder.Services.AddDistributedMemoryCache();
@@ -351,8 +348,6 @@ if (!useInMemory)
     }
 }
 
-// 1.9 Eliminado TokenBlacklist.Initialize() — se reemplaza por inyección de ITokenBlacklistService en paso 1.10
-
 if (app.Environment.IsDevelopment())
 {
     var warmupSw = Stopwatch.StartNew();
@@ -382,11 +377,6 @@ app.UseMiddleware<WebAPIDevSecOps.Middleware.RequestTimeoutMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.AuditLoggingMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.ExceptionHandlingMiddleware>();
 
-// El paso 1.10 reemplaza el middleware inline en Program.cs:381-392 que actualmente usa TokenBlacklist.IsBlacklisted(token) (clase estática ya eliminada) por una versión que inyecta ITokenBlacklistService vía context.RequestServices. Esto:
-// 1. Arregla la compilación (rota desde 1.6)
-// 2. Cambia de estático a inyectado: obtiene ITokenBlacklistService del DI y llama a IsBlacklistedAsync(jti)
-// 3. Extrae el JTI del token: necesita parsear el JWT para obtener el jti (similar a como lo hacía TokenBlacklist.TryReadToken)
-// 4. Convierte a async: usa IsBlacklistedAsync en lugar del método sincrónico estático
 app.Use(async (context, next) =>
 {
     var token = context.Request.Headers["Authorization"]
@@ -411,8 +401,10 @@ app.Use(async (context, next) =>
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "Error al validar blacklist de token");
         }
     }
 

@@ -12,24 +12,6 @@ using WebAPIDevSecOps.Interfaces;
 
 namespace WebAPIDevSecOps.Services
 {
-    // El paso 1.11 migra LoginService de IMemoryCache a IDistributedCache.
-    // Actualmente usa IMemoryCache para trackear intentos fallidos y lockout por usuario (líneas 21, 28).
-    // Con IDistributedCache (Redis), el conteo de intentos fallidos y bloqueos será compartido entre todas las
-    // instancias EC2, evitando que un atacante pueda reintentar por otra instancia.
-    // Las claves Redis a usar (según sección 9 del plan):
-    // - attempts:{user} — contador de intentos fallidos (TTL 30 min)
-    // - lockout:{user} — flag de bloqueo (TTL 15 min)
-    // Cambios necesarios:
-    // 1. IMemoryCache _cache → IDistributedCache _cache
-    // 2. AddMemoryCache() ya fue reemplazado por AddStackExchangeRedisCache() (paso 1.2)
-    // 3. Usar SetStringAsync/GetStringAsync con DistributedCacheEntryOptions en lugar de Set/Get de IMemoryCache
-    // 4. Serialización/deserialización manual de enteros (string → int)
-    //    LoginService migrado de IMemoryCache a IDistributedCache:
-    //Lockout check: TryGetValue → GetStringAsync
-    //Failed attempts: contador serializado como string con int.TryParse
-    //Removes: Remove → RemoveAsync
-    //Sets: Set → SetStringAsync con DistributedCacheEntryOptions
-    //RecordFailedAttempt renombrado a RecordFailedAttemptAsync(async)
     public class LoginService : ILoginService
     {
         private readonly AppDbContext _context;

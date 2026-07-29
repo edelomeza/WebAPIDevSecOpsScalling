@@ -95,7 +95,7 @@ namespace WebAPIDevSecOps.Context
             // ---- VenPedidoDetalle ----
             modelBuilder.Entity<VenPedidoDetalle>()
                 .HasOne(vd => vd.VenPedido)
-                .WithMany()
+                .WithMany(v => v.Detalles)
                 .HasForeignKey(vd => vd.idVenPedido)
                 .OnDelete(DeleteBehavior.Restrict);
 
@@ -108,7 +108,7 @@ namespace WebAPIDevSecOps.Context
             // ---- VenPedidoPago ----
             modelBuilder.Entity<VenPedidoPago>()
                 .HasOne(vp => vp.VenPedido)
-                .WithMany()
+                .WithMany(v => v.Pagos)
                 .HasForeignKey(vp => vp.idVenPedido)
                 .OnDelete(DeleteBehavior.Restrict);
 
@@ -121,7 +121,7 @@ namespace WebAPIDevSecOps.Context
             // ---- VenPedidoFactura ----
             modelBuilder.Entity<VenPedidoFactura>()
                 .HasOne(vf => vf.VenPedido)
-                .WithMany()
+                .WithMany(v => v.Facturas)
                 .HasForeignKey(vf => vf.idVenPedido)
                 .OnDelete(DeleteBehavior.Restrict);
 

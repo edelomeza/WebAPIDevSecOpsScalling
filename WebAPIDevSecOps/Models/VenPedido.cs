@@ -29,5 +29,9 @@ namespace WebAPIDevSecOps.Models
 
         [ForeignKey("idCliCliente")]
         public CliCliente? CliCliente { get; set; }
+
+        public ICollection<VenPedidoDetalle> Detalles { get; set; } = new List<VenPedidoDetalle>();
+        public ICollection<VenPedidoPago>? Pagos { get; set; }
+        public ICollection<VenPedidoFactura>? Facturas { get; set; }
     }
 }

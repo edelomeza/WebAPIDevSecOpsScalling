@@ -618,11 +618,20 @@ GET /api/productos/5
 
 | Paso | Servicio | Métodos clave | Lógica | Estado |
 |------|----------|---------------|--------|--------|
-| 5.1 | `VentasPedidoService` | `CrearPedidoAsync` | Valida cliente+productos, calcula total, crea VenPedido+Detalles, publica evento | 🔲 |
+| 5.1 | `VentasPedidoService` | `CrearPedidoAsync` | Valida cliente+productos, calcula total, crea VenPedido+Detalles, publica evento | ✅ |
 | 5.2 | `PagoService` | `ProcesarPagoAsync`, `ReembolsarPagoAsync` | Simula 90% éxito, crea VenPedidoPago | 🔲 |
 | 5.3 | `FacturaService` | `GenerarFacturaAsync`, `CancelarFacturaAsync` | Folio F-{año}-{seq} desde Redis, crea VenPedidoFactura | 🔲 |
 | 5.4 | `CompensationService` | CompensarPorPagoRechazado, CompensarPorFacturaRechazada | Nivel 1: liberar stock. Nivel 2: reembolsar + liberar | 🔲 |
 | 5.5 | Registrar servicios en DI | `Program.cs` | — | 🔲 |
+
+> **Nota 5.1:** `VentasPedidoService.CrearPedidoAsync` es el punto de entrada del saga. Su función es:
+> 1. Validar que el `CliCliente` existe y que cada `ProProducto` en los detalles existe (obtiene precio unitario de cada uno)
+> 2. Calcular `decTotal` = Σ (cantidad × precioUnitario)
+> 3. Crear `VenPedido` (Guid, estado `Pendiente`) + `VenPedidoDetalle` por cada línea
+> 4. Guardar en BD
+> 5. Publicar `PedidoCreadoEvent` (con `PedidoId`, `ClienteId`, `Total`, `Detalles`) para iniciar la coreografía
+> 6. Retornar `PedidoResponseDto` con los datos del pedido creado
+> Es análogo a lo que hace `VentaService.CreateAsync` pero para el nuevo flujo saga, con Guid PK y sin depender de entidades legacy.
 
 ---
 

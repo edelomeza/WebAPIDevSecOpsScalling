@@ -517,14 +517,14 @@ GET /api/productos/5
 
 | Paso | Actividad | Archivo | Estado |
 |------|-----------|---------|--------|
-| 3.1 | Crear `VenPedido.cs` | `Models/VenPedido.cs` | 🔲 |
-| 3.2 | Crear `VenPedidoDetalle.cs` | `Models/VenPedidoDetalle.cs` | 🔲 |
-| 3.3 | Crear `VenPedidoPago.cs` | `Models/VenPedidoPago.cs` | 🔲 |
-| 3.4 | Crear `VenPedidoFactura.cs` | `Models/VenPedidoFactura.cs` | 🔲 |
-| 3.5 | Agregar 4 DbSets en AppDbContext | `Context/AppDbContext.cs` | 🔲 |
-| 3.6 | Configurar FKs (Restrict), unique indexes | `Context/AppDbContext.cs` | 🔲 |
-| 3.7 | `dotnet ef migrations add SagaVentas` | Migración | 🔲 |
-| 3.8 | Verificar migración genera SQL correcto | — | 🔲 |
+| 3.1 | Crear `VenPedido.cs` | `Models/VenPedido.cs` | ✅ |
+| 3.2 | Crear `VenPedidoDetalle.cs` | `Models/VenPedidoDetalle.cs` | ✅ |
+| 3.3 | Crear `VenPedidoPago.cs` | `Models/VenPedidoPago.cs` | ✅ |
+| 3.4 | Crear `VenPedidoFactura.cs` | `Models/VenPedidoFactura.cs` | ✅ |
+| 3.5 | Agregar 4 DbSets en AppDbContext | `Context/AppDbContext.cs` | ✅ |
+| 3.6 | Configurar FKs (Restrict), unique indexes | `Context/AppDbContext.cs` | ✅ |
+| 3.7 | `dotnet ef migrations add SagaVentas` | Migración | ✅ |
+| 3.8 | Verificar migración genera SQL correcto | — | ✅ |
 
 ---
 

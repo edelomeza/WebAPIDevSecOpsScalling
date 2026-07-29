@@ -81,6 +81,55 @@ namespace WebAPIDevSecOps.Context
                 .HasForeignKey(vd => vd.idProProducto)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // ---- VenPedido ----
+            modelBuilder.Entity<VenPedido>()
+                .HasOne(v => v.CliCliente)
+                .WithMany()
+                .HasForeignKey(v => v.idCliCliente)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<VenPedido>()
+                .HasIndex(v => v.strEstadoSaga)
+                .HasDatabaseName("IX_VenPedido_strEstadoSaga");
+
+            // ---- VenPedidoDetalle ----
+            modelBuilder.Entity<VenPedidoDetalle>()
+                .HasOne(vd => vd.VenPedido)
+                .WithMany()
+                .HasForeignKey(vd => vd.idVenPedido)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<VenPedidoDetalle>()
+                .HasOne(vd => vd.ProProducto)
+                .WithMany()
+                .HasForeignKey(vd => vd.idProProducto)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ---- VenPedidoPago ----
+            modelBuilder.Entity<VenPedidoPago>()
+                .HasOne(vp => vp.VenPedido)
+                .WithMany()
+                .HasForeignKey(vp => vp.idVenPedido)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<VenPedidoPago>()
+                .HasIndex(vp => vp.strIdTransaccion)
+                .IsUnique()
+                .HasDatabaseName("IX_VenPedidoPago_strIdTransaccion")
+                .HasFilter("[strIdTransaccion] IS NOT NULL");
+
+            // ---- VenPedidoFactura ----
+            modelBuilder.Entity<VenPedidoFactura>()
+                .HasOne(vf => vf.VenPedido)
+                .WithMany()
+                .HasForeignKey(vf => vf.idVenPedido)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<VenPedidoFactura>()
+                .HasIndex(vf => vf.strFolioFactura)
+                .IsUnique()
+                .HasDatabaseName("IX_VenPedidoFactura_strFolioFactura");
+
         }
 
         public DbSet<CliCliente> CliCliente { get; set; } = default!;
@@ -90,5 +139,9 @@ namespace WebAPIDevSecOps.Context
         public DbSet<VenCatEstado> VenCatEstado { get; set; } = default!;
         public DbSet<VenVenta> VenVenta { get; set; } = default!;
         public DbSet<VenVentaDetalle> VenVentaDetalle { get; set; } = default!;
+        public DbSet<VenPedido> VenPedido { get; set; } = default!;
+        public DbSet<VenPedidoDetalle> VenPedidoDetalle { get; set; } = default!;
+        public DbSet<VenPedidoPago> VenPedidoPago { get; set; } = default!;
+        public DbSet<VenPedidoFactura> VenPedidoFactura { get; set; } = default!;
     }
 }

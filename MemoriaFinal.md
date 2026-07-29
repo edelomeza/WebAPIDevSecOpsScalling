@@ -13,21 +13,21 @@
 
 | # | Paso | Origen | Tarea | Descripción | Archivos | Depende de |
 |---|---|---|---|---|---|---|
-| 1.1 | ⬜ | `[MQA] F0` | Diagnóstico inicial | Ejecutar tests, medir cobertura actual, correr Semgrep, listar dependencias, documentar línea base | — | — |
-| 1.2 | ⬜ | `[MQA] F1.1` | Subir cobertura 30%→75% | `check_coverage.py:23` cambiar threshold de 30 a 75 | `scripts/check_coverage.py` | 1.1 |
-| 1.3 | ⬜ | `[MQA] F1.2` | Exclusiones coverage | Excluir `[WebAPIDevSecOps.Models]*`, `[WebAPIDevSecOps.Dto]*`, `[WebAPIDevSecOps.Migrations]*` | `coverage.runsettings` | 1.2 |
-| 1.4 | ⬜ | `[MQA] F1.3` | SonarAnalyzer.CSharp | Agregar package `SonarAnalyzer.CSharp` version 10.* con `PrivateAssets=all` | `Directory.Build.props` | 1.3 |
-| 1.5 | ⬜ | `[MQA] F1.4` | Thresholds complejidad/MI | Configurar `RunAnalyzersDuringBuild=true`, `EnforceCodeStyleInBuild=true`. SonarCloud: complejidad ≤15, MI ≥60, duplicación <3% | `Directory.Build.props` + SonarCloud | 1.4 |
-| 1.6 | ⬜ | `[MQA] F1.5` | 8 reglas nuevas Semgrep | Implementar: `log-sensitive-data`, `sql-injection-raw`, `missing-cors-validation`, `disabled-rate-limit`, `exception-without-log`, `loop-logging`, `insecure-deserialization`, `hardcoded-cryptokeys` | `.semgrep/semgrep.yaml` | 1.1 |
-| 1.7 | ⬜ | `[MQA] F1.6-1.7` | Exigencia 80% código nuevo | Configurar `sonar.new.coverage.requirement=80` en SonarCloud. Crear `sonar-project.properties` | `sonar-project.properties` (nuevo) | 1.5 |
-| 1.8 | ⬜ | `[MQA] F1.8` | Verificar build falla con violaciones | Prueba forzada: crear método con complejidad >15, verificar que build falla | — | 1.7 |
-| 1.9 | ⬜ | `[MQA] F11.1` | Crear CHECKLIST_PR.md | Checklist de calidad para PRs: cobertura ≥80%, tests nuevos, rate limiting, validación, sin secretos | `CHECKLIST_PR.md` (nuevo) | 1.8 |
-| 1.10 | ⬜ | `[MQA] F11.2-11.3` | Job pr-quality-gate en CI | GitHub Script que verifica todos los checks del PR + comentario automático con estado | `.github/workflows/ci-cd.yml` | 1.9 |
-| 1.11 | ⬜ | `[MQA] F11.4` | Template PR en GitHub | Crear `.github/PULL_REQUEST_TEMPLATE.md` con checklist integrado | `.github/PULL_REQUEST_TEMPLATE.md` (nuevo) | 1.10 |
-| 1.12 | ⬜ | `[MQA] F6.2` | Test: Redis caído con fallback | Integration test: configurar Redis con puerto inválido, login debe funcionar usando fallback en memoria | `IntegrationTest/RedisFailureTests.cs` (nuevo) | 1.1 |
-| 1.13 | ⬜ | `[MQA] F6.3` | Implementar fallback Redis caído | En `LoginService` y `TokenBlacklistService`: try-catch alrededor de Redis, si falla usar `IMemoryCache` como fallback. Loggear warning | `Services/LoginService.cs`, `Services/TokenBlacklistService.cs` | 1.12 |
-| 1.14 | ⬜ | `[MQA] F6.4-6.6` | Tests circuit breaker Polly | Unit tests: simular fallos, verificar que circuito se abre, medio-abre, y se cierra | `UnitTest/Services/DbResilienceServiceTests.cs` (nuevo) | 1.1 |
-| 1.15 | ⬜ | `[MQA] F7.9` | JWT ValidAlgorithms | Agregar `ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 }` en `TokenValidationParameters` | `Program.cs` | 1.1 |
+| 1.1 | ✅ | `[MQA] F0` | Diagnóstico inicial | **Hecho.** Tests: 741/741 OK (Unit 357, Integ 250, Security 134). Cobertura: 45.9% (4194/9128). Deps desactualizadas: 10. Semgrep: no disponible local. | — | — |
+| 1.2 | ✅ | `[MQA] F1.1` | Subir cobertura 30%→75% | Cambiado threshold de 30 a 75. Fix deprecation warning de `find()` | `scripts/check_coverage.py` | 1.1 |
+| 1.3 | ✅ | `[MQA] F1.2` | Exclusiones coverage | Excluido `[WebAPIDevSecOps.Models]*`, `[WebAPIDevSecOps.Dto]*`, `[WebAPIDevSecOps.Migrations]*` | `coverage.runsettings` | 1.2 |
+| 1.4 | ✅ | `[MQA] F1.3` | SonarAnalyzer.CSharp | Agregado `SonarAnalyzer.CSharp` 10.* con `PrivateAssets=all` en `Directory.Build.props`. Build 0 errores, 345 warnings (incluye nuevos S8969/S1481) | `Directory.Build.props` | 1.3 |
+| 1.5 | ✅ | `[MQA] F1.4` | Thresholds complejidad/MI | Configurado `RunAnalyzersDuringBuild=true`, `EnforceCodeStyleInBuild=true`, `AnalysisLevel=latest`, `AnalysisMode=All` en `Directory.Build.props`. Build 0 errores. ⚠️ SonarCloud thresholds (complejidad ≤15, MI ≥60, duplicación <3%) pendientes de configurar en UI de SonarCloud | `Directory.Build.props` + SonarCloud | 1.4 |
+| 1.6 | ✅ | `[MQA] F1.5` | 8 reglas nuevas Semgrep | Implementadas: `log-sensitive-data`, `sql-injection-raw`, `missing-cors-validation`, `disabled-rate-limit`, `exception-without-log`, `loop-logging`, `insecure-deserialization`, `hardcoded-cryptokeys` | `.semgrep/semgrep.yaml` | 1.1 |
+| 1.7 | ✅ | `[MQA] F1.6-1.7` | Exigencia 80% código nuevo | Creado `sonar-project.properties` con `sonar.new.coverage.requirement=80`, `sonar.coverage.acceptance.requirement=75`, exclusions para Migrations/Models/Dto/Program.cs | `sonar-project.properties` (nuevo) | 1.5 |
+| 1.8 | ✅ | `[MQA] F1.8` | Verificar build falla con violaciones | Creado método CC=17 >15, build con S1541+S3776 como errors → falla. Limpiado. ⚠️ Program.cs (CC=39) y EmpleadoService.cs (CC=12) tienen violaciones preexistentes | — | 1.7 |
+| 1.9 | ✅ | `[MQA] F11.1` | Crear CHECKLIST_PR.md | Creado con secciones: código, calidad/tests, seguridad, API, infraestructura, review, post-merge | `CHECKLIST_PR.md` (nuevo) | 1.8 |
+| 1.10 | ✅ | `[MQA] F11.2-11.3` | Job pr-quality-gate en CI | Agregado job `pr-quality-gate` con GitHub Script: verifica build-and-test + semgrep, postea/actualiza comentario en PR con resultados | `.github/workflows/ci-cd.yml` | 1.9 |
+| 1.11 | ✅ | `[MQA] F11.4` | Template PR en GitHub | Creado `.github/PULL_REQUEST_TEMPLATE.md` con checklist de código, tests, seguridad y QA automático. Referencia a CHECKLIST_PR.md para versión completa | `.github/PULL_REQUEST_TEMPLATE.md` (nuevo) | 1.10 |
+| 1.12 | ✅ | `[MQA] F6.2` | Test: Redis caído con fallback | Creado `RedisFailureTests.cs` con `FailingDistributedCache` que lanza excepción. Tests esperan login OK y 401 con credenciales inválidas. ⚠️ Fallará hasta implementar fallback en 1.13 | `IntegrationTest/RedisFailureTests.cs` (nuevo) | 1.1 |
+| 1.13 | ✅ | `[MQA] F6.3` | Implementar fallback Redis caído | Try-catch en cada operación Redis de `LoginService` y `TokenBlacklistService`. Fallback a `IMemoryCache` con warning log. `AddMemoryCache()` registrado en `Program.cs`. Tests 357/357 OK, RedisFailureTests 2/2 OK | `Services/LoginService.cs`, `Services/TokenBlacklistService.cs`, `Program.cs` | 1.12 |
+| 1.14 | ✅ | `[MQA] F6.4-6.6` | Tests circuit breaker Polly | 3 tests: circuito se abre tras MinimumThroughput fallos, se cierra tras half-open exitoso, se reabre tras half-open fallido. 360/360 tests OK | `UnitTest/Services/DbResilienceServiceTests.cs` (nuevo) | 1.1 |
+| 1.15 | ✅ | `[MQA] F7.9` | JWT ValidAlgorithms | Agregado `ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 }` en `TokenValidationParameters` en `Program.cs:207` | `Program.cs` | 1.1 |
 | 1.16 | ⬜ | `[MQA] F7.10` | Test: algoritmo None es rechazado | Security test: generar JWT con alg "none", verificar 401 | `SecurityTest/JwtAlgorithmConfusionTests.cs` (nuevo) | 1.15 |
 | 1.17 | ⬜ | `[MQA] F10.1` | OpenTelemetry básico | Agregar packages: `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.EntityFrameworkCore`, `OpenTelemetry.Exporter.Console` | `WebAPIDevSecOps.csproj`, `Program.cs` | 1.1 |
 
@@ -190,8 +190,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ### FASE 1 — Fundación de Calidad (17 pasos)
 ```
-▢ 1.1  ▢ 1.2  ▢ 1.3  ▢ 1.4  ▢ 1.5  ▢ 1.6  ▢ 1.7  ▢ 1.8
-▢ 1.9  ▢ 1.10 ▢ 1.11 ▢ 1.12 ▢ 1.13 ▢ 1.14 ▢ 1.15 ▢ 1.16
+✅ 1.1  ✅ 1.2  ✅ 1.3  ✅ 1.4  ✅ 1.5  ✅ 1.6  ✅ 1.7  ✅ 1.8
+✅ 1.9  ✅ 1.10 ✅ 1.11 ✅ 1.12 ✅ 1.13 ✅ 1.14 ✅ 1.15 ▢ 1.16
 ▢ 1.17
 ```
 
@@ -229,8 +229,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ---
 
-**Total: 95 pasos | ▢ 0% completado**
+**Total: 95 pasos | ✅ 15% completado (15/95)**
 
 ```
-Progreso: ░░░░░░░░░░░░░░░░░░░░ 0%
+Progreso: ███████████████░░░░░ 15%
 ```

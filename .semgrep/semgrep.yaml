@@ -1,4 +1,6 @@
 rules:
+
+  # ── existing rules ──
   - id: hardcoded-connection-string
     pattern: '"Server=...;Database=...;User Id=...;Password=..."'
     message: >-
@@ -77,6 +79,164 @@ rules:
     message: >-
       Use RandomNumberGenerator instead of System.Random for security-sensitive contexts.
     severity: WARNING
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  # ── new rules (Fase 1 step 1.6) ──
+
+  - id: log-sensitive-data
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $LOG.Log($LEVEL, "...$VAR...")
+          - pattern: |
+              $LOG.Log($LEVEL, $EVENT, "...$VAR...")
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (password|secret|token|apikey|api.?key|credential|auth.?header)
+    message: >-
+      Potential sensitive data logged ($VAR). Avoid logging passwords, tokens, or secrets.
+    severity: ERROR
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: sql-injection-raw
+    patterns:
+      - pattern-either:
+          - pattern: |
+              FromSqlRaw($INTERP)
+          - pattern: |
+              ExecuteSqlRaw($INTERP)
+          - pattern: |
+              ExecuteSqlCommand($INTERP, ...)
+      - metavariable-regex:
+          metavariable: $INTERP
+          regex: '.*\$\{.*\}.*|\".*\{\d\}.*\"'
+    message: >-
+      Raw SQL with interpolation detected - possible SQL injection. Use parameterized queries.
+    severity: ERROR
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: missing-cors-validation
+    patterns:
+      - pattern-either:
+          - pattern: |
+              .AllowAnyOrigin()
+          - pattern: |
+              .AllowAnyHeader()
+          - pattern: |
+              .AllowAnyMethod()
+          - pattern: |
+              .SetIsOriginAllowed(_ => true)
+    message: >-
+      Permissive CORS policy detected. Restrict to specific origins/headers/methods.
+    severity: ERROR
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: disabled-rate-limit
+    patterns:
+      - pattern-either:
+          - pattern: |
+              .DisableRateLimiting()
+          - pattern: |
+              DisableRateLimiting = true
+          - pattern: |
+              .SetRateLimitingPolicy(...)
+    message: >-
+      Rate limiting disabled or bypassed. Ensure rate limiting is active in production.
+    severity: ERROR
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: exception-without-log
+    patterns:
+      - pattern: |
+          try {
+            ...
+          } catch (Exception $EX) {
+            ...
+          }
+      - pattern-not: |
+          try {
+            ...
+          } catch (Exception $EX) {
+            ...$LOG...Log...$EX...
+            ...
+          }
+    message: >-
+      Exception caught without logging. Always log exception details for diagnostics.
+    severity: WARNING
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: loop-logging
+    patterns:
+      - pattern-inside: |
+          for (...) { ... }
+      - pattern: $LOG.Log(...)
+    message: >-
+      Logging inside a loop can cause performance issues and log flooding.
+      Use structured logging with batch or reduce log level.
+    severity: WARNING
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: insecure-deserialization
+    patterns:
+      - pattern-either:
+          - pattern: |
+              JsonSerializer.Deserialize<$TYPE>($INPUT)
+          - pattern: |
+              JsonConvert.DeserializeObject($INPUT)
+          - pattern: |
+              BinaryFormatter.Deserialize(...)
+          - pattern: |
+              XmlSerializer.Deserialize(...)
+          - pattern: |
+              JavaScriptSerializer.Deserialize(...)
+          - pattern: |
+              LosFormatter.Deserialize(...)
+    message: >-
+      Insecure deserialization detected. Validate input type and source.
+      Avoid BinaryFormatter/LosFormatter which are vulnerable to RCE.
+    severity: ERROR
+    languages: [csharp]
+    paths:
+      include:
+        - "*.cs"
+
+  - id: hardcoded-cryptokeys
+    patterns:
+      - pattern-either:
+          - pattern: |
+              new byte[] { $X, $Y, $Z, ... }
+          - pattern: |
+              new SymmetricSecurityKey(Encoding.UTF8.GetBytes("$HARDCODED"))
+          - pattern: |
+              new SymmetricSecurityKey(Encoding.ASCII.GetBytes("$HARDCODED"))
+          - pattern: |
+              new Rfc2898DeriveBytes("$HARDCODED", ...)
+      - pattern-not: |
+          new byte[] { 1 }
+    message: >-
+      Hardcoded cryptographic key or secret detected. Use Key Vault or user secrets.
+    severity: ERROR
     languages: [csharp]
     paths:
       include:

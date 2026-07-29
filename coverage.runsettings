@@ -5,7 +5,8 @@
         <Configuration>
           <Format>opencover</Format>
           <Exclude>
-            [UnitTest]*,[IntegrationTest]*,[SecurityTest]*,[xunit.*]*
+            [UnitTest]*,[IntegrationTest]*,[SecurityTest]*,[xunit.*]*,
+            [WebAPIDevSecOps.Models]*,[WebAPIDevSecOps.Dto]*,[WebAPIDevSecOps.Migrations]*
           </Exclude>
         </Configuration>
       </DataCollector>

@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Moq;
 using WebAPIDevSecOps.Services;
 
@@ -13,7 +15,7 @@ public class TokenBlacklistServiceTests
     public TokenBlacklistServiceTests()
     {
         _cacheMock = new Mock<IDistributedCache>();
-        _service = new TokenBlacklistService(_cacheMock.Object);
+        _service = new TokenBlacklistService(_cacheMock.Object, Mock.Of<IMemoryCache>(), Mock.Of<ILogger<TokenBlacklistService>>());
     }
 
     [Fact]

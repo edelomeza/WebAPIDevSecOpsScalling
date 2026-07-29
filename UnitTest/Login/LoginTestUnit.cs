@@ -3,6 +3,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -85,7 +86,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync("lockout:admin", It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
 
             var request = new LoginRequest("admin", password);
 
@@ -114,7 +115,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
 
             var result = await controller.Login(
                 new LoginRequest("fake", "12345678"),
@@ -153,7 +154,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, config, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, config, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
 
             var result = await controller.Login(
                 new LoginRequest("admin", "wrong"),

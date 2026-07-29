@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -20,13 +21,15 @@ namespace WebAPIDevSecOps.Services
         private readonly DbResilienceService _dbResilience;
         private readonly ILogger<LoginService> _logger;
         private readonly IDistributedCache _cache;
+        private readonly IMemoryCache _memoryCache;
+        private static bool _redisHealthy = true;
 
         private const string FakeHash = "$argon2id$v=19$m=65536,t=3,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
         private const int MaxFailedAttempts = 5;
         private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(30);
 
-        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IDistributedCache cache)
+        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IDistributedCache cache, IMemoryCache memoryCache)
         {
             _context = context;
             _configuration = configuration;
@@ -34,6 +37,7 @@ namespace WebAPIDevSecOps.Services
             _dbResilience = dbResilience;
             _logger = logger;
             _cache = cache;
+            _memoryCache = memoryCache;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct)
@@ -42,7 +46,17 @@ namespace WebAPIDevSecOps.Services
 
             var username = request.User.Trim();
 
-            var lockoutValue = await _cache.GetStringAsync($"lockout:{username}", ct);
+            string? lockoutValue;
+            try
+            {
+                lockoutValue = await _cache.GetStringAsync($"lockout:{username}", ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis unavailable for lockout check, falling back to memory cache");
+                _redisHealthy = false;
+                lockoutValue = _memoryCache.Get<string>($"lockout:{username}");
+            }
             if (lockoutValue is not null)
             {
                 throw new UnauthorizedAccessException("Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo más tarde.");
@@ -69,8 +83,18 @@ namespace WebAPIDevSecOps.Services
                 throw new UnauthorizedAccessException("Credenciales inválidas.");
             }
 
-            await _cache.RemoveAsync($"lockout:{username}", ct);
-            await _cache.RemoveAsync($"attempts:{username}", ct);
+            try
+            {
+                await _cache.RemoveAsync($"lockout:{username}", ct);
+                await _cache.RemoveAsync($"attempts:{username}", ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis unavailable for cache cleanup, falling back to memory cache");
+                _redisHealthy = false;
+                _memoryCache.Remove($"lockout:{username}");
+                _memoryCache.Remove($"attempts:{username}");
+            }
 
             if (await Task.Run(() => _passwordHasher.NeedsRehash(usuario.strPWD), ct))
             {
@@ -92,7 +116,17 @@ namespace WebAPIDevSecOps.Services
             var attemptsKey = $"attempts:{username}";
             var attempts = 1;
 
-            var currentValue = await _cache.GetStringAsync(attemptsKey, ct);
+            string? currentValue;
+            try
+            {
+                currentValue = await _cache.GetStringAsync(attemptsKey, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis unavailable for failed attempt check, falling back to memory cache");
+                _redisHealthy = false;
+                currentValue = _memoryCache.Get<string>(attemptsKey);
+            }
             if (currentValue is not null && int.TryParse(currentValue, out var currentAttempts))
             {
                 attempts = currentAttempts + 1;
@@ -100,18 +134,37 @@ namespace WebAPIDevSecOps.Services
 
             if (attempts >= MaxFailedAttempts)
             {
-                await _cache.SetStringAsync($"lockout:{username}", "1", new DistributedCacheEntryOptions
+                try
                 {
-                    AbsoluteExpirationRelativeToNow = LockoutDuration
-                }, ct);
-                await _cache.RemoveAsync(attemptsKey, ct);
+                    await _cache.SetStringAsync($"lockout:{username}", "1", new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = LockoutDuration
+                    }, ct);
+                    await _cache.RemoveAsync(attemptsKey, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Redis unavailable for lockout set, falling back to memory cache");
+                    _redisHealthy = false;
+                    _memoryCache.Set($"lockout:{username}", "1", LockoutDuration);
+                    _memoryCache.Remove(attemptsKey);
+                }
             }
             else
             {
-                await _cache.SetStringAsync(attemptsKey, attempts.ToString(), new DistributedCacheEntryOptions
+                try
                 {
-                    AbsoluteExpirationRelativeToNow = AttemptWindow
-                }, ct);
+                    await _cache.SetStringAsync(attemptsKey, attempts.ToString(), new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = AttemptWindow
+                    }, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Redis unavailable for attempt tracking, falling back to memory cache");
+                    _redisHealthy = false;
+                    _memoryCache.Set(attemptsKey, attempts.ToString(), AttemptWindow);
+                }
             }
         }
 

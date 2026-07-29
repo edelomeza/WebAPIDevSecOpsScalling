@@ -21,6 +21,8 @@ permissions:
   packages: write
   security-events: write
   id-token: write
+  pull-requests: write
+  checks: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -491,5 +493,82 @@ jobs:
           path: |
             zap-report.html
             zap-report.json
+
+  pr-quality-gate:
+    name: PR Quality Gate
+    runs-on: ubuntu-latest
+    needs: [build-and-test, semgrep]
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 5
+
+    steps:
+      - name: Check all job conclusions
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const required = ['build-and-test', 'semgrep'];
+            const conclusions = {
+              'build-and-test': '${{ needs.build-and-test.result }}',
+              'semgrep': '${{ needs.semgrep.result }}'
+            };
+
+            let allPass = true;
+            let details = '| Job | Result |\n|---|---|';
+
+            for (const job of required) {
+              const result = conclusions[job];
+              const icon = result === 'success' ? '✅' : '❌';
+              details += `\n| **${job}** | ${icon} ${result} |`;
+              if (result !== 'success') allPass = false;
+            }
+
+            const commitSha = context.payload.pull_request?.head.sha?.substring(0, 7) || context.sha.substring(0, 7);
+            const statusIcon = allPass ? '✅' : '❌';
+            const statusText = allPass ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED';
+
+            const body = `## 🏗️ PR Quality Gate
+            ${details}
+
+            **Overall:** ${statusIcon} **${statusText}**
+
+            > Commit: \`${commitSha}\` | Branch: \`${context.payload.pull_request?.head.ref || 'unknown'}\`
+            > Timestamp: ${new Date().toISOString()}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body?.includes('PR Quality Gate')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+            core.setOutput('all_passed', allPass.toString());
+
+      - name: Fail if any check failed
+        if: steps.check.outputs.all_passed == 'false'
+        run: |
+          echo "❌ PR Quality Gate: Some checks failed"
+          echo "## ❌ PR Quality Gate FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "One or more required checks did not pass." >> $GITHUB_STEP_SUMMARY
+          exit 1
 
 

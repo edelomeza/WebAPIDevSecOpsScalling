@@ -12,6 +12,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using FluentValidation;
 using Scalar.AspNetCore;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Filters;
 using System.Diagnostics;
@@ -47,6 +50,16 @@ Log.Information("Iniciando aplicación WebAPIDevSecOps");
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog();
+
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter())
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddConsoleExporter());
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
@@ -204,6 +217,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
 
+        ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+
         IssuerSigningKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(jwtKey))
     };
@@ -263,6 +278,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly",
         policy => policy.RequireRole("Admin"));
 });
+
+builder.Services.AddMemoryCache();
 
 if (useInMemory)
 {

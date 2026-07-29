@@ -535,13 +535,79 @@ GET /api/productos/5
 
 | Paso | Evento | Propiedades | Estado |
 |------|--------|-------------|--------|
-| 4.1 | `PedidoCreadoEvent` | PedidoId (Guid), ClienteId, Total, Detalles[], FechaCreacion | 🔲 |
-| 4.2 | `StockValidadoEvent` | PedidoId | 🔲 |
-| 4.3 | `StockRechazadoEvent` | PedidoId, Motivo | 🔲 |
-| 4.4 | `PagoProcesadoEvent` | PedidoId, IdTransaccion, Monto | 🔲 |
-| 4.5 | `PagoRechazadoEvent` | PedidoId, Motivo | 🔲 |
-| 4.6 | `FacturaGeneradoEvent` | PedidoId, FolioFactura | 🔲 |
-| 4.7 | `FacturaRechazadaEvent` | PedidoId, Motivo | 🔲 |
+| 4.1 | `PedidoCreadoEvent` | PedidoId (Guid), ClienteId, Total, Detalles[], FechaCreacion | ✅ |
+| 4.2 | `StockValidadoEvent` | PedidoId | ✅ |
+| 4.3 | `StockRechazadoEvent` | PedidoId, Motivo | ✅ |
+| 4.4 | `PagoProcesadoEvent` | PedidoId, IdTransaccion, Monto | ✅ |
+| 4.5 | `PagoRechazadoEvent` | PedidoId, Motivo | ✅ |
+| 4.6 | `FacturaGeneradoEvent` | PedidoId, FolioFactura | ✅ |
+| 4.7 | `FacturaRechazadaEvent` | PedidoId, Motivo | ✅ |
+
+> **Nota 4.1:** El Paso 4.1 — `PedidoCreadoEvent` es el evento que inicia el saga coreográfica. Según el diagrama de la Etapa 5:
+> 1. `VentasPedidoService.CrearPedidoAsync` lo publica después de validar cliente+productos, calcular el total, y crear `VenPedido` + `VenPedidoDetalle` en BD con estado `Pendiente`.
+> 2. `StockValidatorConsumer` lo consume desde la cola SQS `pedidos.fifo` para validar existencias y descontar stock.
+>
+> **Propiedades:**
+> - `PedidoId` (Guid) — Identificador del pedido
+> - `ClienteId` (int) — FK al cliente
+> - `Total` (decimal) — Monto total calculado
+> - `Detalles[]` — Líneas del pedido (producto + cantidad + precio unitario)
+> - `FechaCreacion` (datetime) — Timestamp del evento
+>
+> Es el contrato que enlaza el servicio de pedidos con el validador de stock, arrancando toda la cadena de eventos del saga.
+>
+> **Nota 4.2:** `StockValidadoEvent` se publica cuando `StockValidatorConsumer` valida que hay existencias suficientes para el pedido. Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `StockValidatorConsumer` — después de verificar stock suficiente y descontar inventario
+> 2. **Cola SQS:** `pedidos-pago.fifo`
+> 3. **Consumidor:** `PagoConsumer` — lo recibe para iniciar el procesamiento del pago
+> 4. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "StockValidado"`
+> 5. **Propiedad única:** `PedidoId` (Guid) — identifica qué pedido avanzó en el saga
+>
+> **Propiedades:**
+> - `PedidoId` (Guid) — Identificador del pedido cuyo stock fue validado
+>
+> **Nota 4.3:** `StockRechazadoEvent` se publica cuando `StockValidatorConsumer` determina que no hay existencias suficientes para el pedido. Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `StockValidatorConsumer` — después de verificar stock insuficiente
+> 2. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "Rechazado"` (FIN — el saga termina aquí)
+> 3. **No hay compensación necesaria** porque no se descontó stock ni se procesó pago — el pedido simplemente se rechaza
+> 4. **Propiedades:** `PedidoId` (Guid) — identifica qué pedido fue rechazado, `Motivo` (string) — razón del rechazo (ej. "Stock insuficiente para el producto X")
+>
+> **Diferencia clave con `StockValidadoEvent`:** Mientras `StockValidadoEvent` continúa el saga hacia el pago, `StockRechazadoEvent` termina el saga en estado `Rechazado` sin acciones adicionales.
+>
+> **Nota 4.4:** `PagoProcesadoEvent` se publica cuando `PagoConsumer` procesa exitosamente el pago del pedido. Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `PagoConsumer` — después de simular la pasarela de pago (90% éxito)
+> 2. **Cola SQS:** `pedidos-factura.fifo`
+> 3. **Consumidor:** `FacturaConsumer` — lo recibe para iniciar la generación de factura
+> 4. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "PagoProcesado"` y crea registro en `VenPedidoPago` con estado `Autorizado`
+> 5. **Propiedades:** `PedidoId` (Guid), `IdTransaccion` (string) — ID único de la transacción simulada, `Monto` (decimal) — monto pagado
+>
+> **Diferencia clave con eventos anteriores:** Es el primer evento que **crea un registro hijo** (`VenPedidoPago`) además de actualizar el estado del pedido. Si este paso falla, se necesita **compensación** (a diferencia de `StockRechazadoEvent` que terminaba sin acción).
+>
+> **Nota 4.5:** `PagoRechazadoEvent` se publica cuando `PagoConsumer` simula el pago y este falla (~10% de los casos según la lógica del saga). Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `PagoConsumer` — después de simular la pasarela de pago con resultado fallido
+> 2. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "Rechazado"`
+> 3. **Requiere compensación:** A diferencia de `StockRechazadoEvent`, aquí **sí se necesita compensación** porque ya se descontó stock en el paso anterior. El `CompensationConsumer` debe liberar el stock reservado (`CompensationService.CompensarPorPagoRechazado` — Nivel 1)
+> 4. **Propiedades:** `PedidoId` (Guid) — identifica qué pedido, `Motivo` (string) — razón del rechazo (ej. "Fondos insuficientes", "Tarjeta declinada")
+>
+> **Diferencia clave con `StockRechazadoEvent`:** `StockRechazado` no requiere compensación (no hubo cambios), mientras que `PagoRechazado` **libera stock** que ya fue descontado por `StockValidatorConsumer`.
+>
+> **Nota 4.6:** `FacturaGeneradoEvent` se publica cuando `FacturaConsumer` genera exitosamente la factura del pedido. Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `FacturaConsumer` — después de generar el folio secuencial (`F-{año}-{seq}` desde Redis) y crear el registro en `VenPedidoFactura`
+> 2. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "Facturado"` (FIN exitoso del saga) y crea registro en `VenPedidoFactura` con estado `Emitida`
+> 3. **Es el fin exitoso del saga** — todos los pasos previos (stock validado, pago procesado, factura generada) se completaron sin errores
+> 4. **Propiedades:** `PedidoId` (Guid), `FolioFactura` (string) — folio único generado (ej. `F-2026-42`)
+>
+> **Diferencia clave:** Es el único evento que representa la **terminación exitosa** del saga completo. Los eventos anteriores (`StockValidadoEvent`, `PagoProcesadoEvent`) son pasos intermedios; `FacturaGeneradoEvent` es el estado final `Facturado`.
+>
+> **Nota 4.7:** `FacturaRechazadaEvent` se publica cuando `FacturaConsumer` falla al generar la factura. Según el flujo del saga (Etapa 5):
+> 1. **Origen:** `FacturaConsumer` — después de que la generación de factura falla (ej. error al generar folio, error de BD)
+> 2. **Efecto en BD:** Actualiza `VenPedido.strEstadoSaga = "Reembolsado"`
+> 3. **Requiere compensación Nivel 2:** Aquí se necesita la compensación **más completa** — `CompensationService.CompensarPorFacturaRechazada` debe:
+>    - **Reembolsar el pago** (cancelar `VenPedidoPago`, cambiarlo a estado `Reembolsado`)
+>    - **Liberar el stock** que fue descontado al inicio
+> 4. **Propiedades:** `PedidoId` (Guid), `Motivo` (string) — razón del rechazo
+>
+> **Diferencia clave con `PagoRechazadoEvent`:** `PagoRechazado` solo libera stock (Nivel 1), mientras que `FacturaRechazada` requiere **reembolso del pago + liberar stock** (Nivel 2), porque cuando se llega a facturación el pago ya fue procesado y hay que revertirlo.
 
 ---
 
@@ -811,7 +877,7 @@ CorrelationIdMiddleware → RequestTimeoutMiddleware → SecurityHeadersMiddlewa
 | 1 — Stateless + Redis | 14 | 0 | 0% |
 | 2 — Cache Distribuido | 14 | 0 | 0% |
 | 3 — Modelos Saga | 8 | 0 | 0% |
-| 4 — Eventos | 7 | 0 | 0% |
+| 4 — Eventos | 7 | 7 | 100% |
 | 5 — Servicios Saga | 5 | 0 | 0% |
 | 6 — MassTransit | 7 | 0 | 0% |
 | 7 — Controllers | 8 | 0 | 0% |

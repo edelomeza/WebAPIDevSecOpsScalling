@@ -15,6 +15,7 @@ namespace UnitTest.Common
             var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, sub ?? "admin"),
+                new Claim(ClaimTypes.NameIdentifier, sub ?? "admin"),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
@@ -41,6 +42,7 @@ namespace UnitTest.Common
             var claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, "admin"),
+                new Claim(ClaimTypes.NameIdentifier, "admin"),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 

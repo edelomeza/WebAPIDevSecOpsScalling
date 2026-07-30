@@ -27,5 +27,8 @@ namespace WebAPIDevSecOps.Models
 
         [Timestamp]
         public byte[] RowVersion { get; set; } = new byte[] { 1 };
+
+        [StringLength(50)]
+        public string? strCreadoPorUsuario { get; set; }
     }
 }

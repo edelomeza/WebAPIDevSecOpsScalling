@@ -3,6 +3,7 @@ using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 
 namespace WebAPIDevSecOps.Services
@@ -11,6 +12,7 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
+        private static readonly ConcurrentDictionary<int, SemaphoreSlim> _productLocks = new();
 
         public VentaDetalleService(AppDbContext context, DbResilienceService dbResilience)
         {
@@ -87,42 +89,47 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<VenVentaDetalleDto> CreateAsync(VenVentaDetalleCreateDto dto)
         {
-            var ventaExiste = await _context.Set<VenVenta>().AnyAsync(v => v.id == dto.idVenVenta);
-            if (!ventaExiste)
+            if (!await _context.Set<VenVenta>().AnyAsync(v => v.id == dto.idVenVenta))
             {
                 throw new ArgumentException("La venta especificada no existe.");
             }
 
-            var producto = await _context.Set<ProProducto>()
-                .Where(p => p.id == dto.idProProducto)
-                .FirstOrDefaultAsync();
-
-            if (producto == null)
+            var semaphore = _productLocks.GetOrAdd(dto.idProProducto, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync();
+            try
             {
-                throw new ArgumentException("El producto especificado no existe.");
+                var producto = await _context.Set<ProProducto>()
+                    .FirstOrDefaultAsync(p => p.id == dto.idProProducto);
+
+                if (producto == null)
+                {
+                    throw new ArgumentException("El producto especificado no existe.");
+                }
+
+                if (dto.intPiezaVenta > producto.intNumeroExistencia)
+                {
+                    throw new ArgumentException("El producto no tiene las suficientes existencias.");
+                }
+
+                producto.intNumeroExistencia -= dto.intPiezaVenta;
+
+                var detalle = new VenVentaDetalle
+                {
+                    idVenVenta = dto.idVenVenta,
+                    idProProducto = dto.idProProducto,
+                    intPiezaVenta = dto.intPiezaVenta,
+                    decTotalVenta = dto.intPiezaVenta * producto.decPrecio,
+                };
+
+                _context.Set<VenVentaDetalle>().Add(detalle);
+                await _dbResilience.SaveChangesAsync(_context);
+
+                return (await GetByIdAsync(detalle.id))!;
             }
-
-            if (dto.intPiezaVenta > producto.intNumeroExistencia)
+            finally
             {
-                throw new ArgumentException("El producto no tiene las suficientes existencias.");
+                semaphore.Release();
             }
-
-            var detalle = new VenVentaDetalle
-            {
-                idVenVenta = dto.idVenVenta,
-                idProProducto = dto.idProProducto,
-                intPiezaVenta = dto.intPiezaVenta,
-                decTotalVenta = dto.intPiezaVenta * producto.decPrecio,
-            };
-
-            _context.Set<VenVentaDetalle>().Add(detalle);
-            await _dbResilience.SaveChangesAsync(_context);
-
-            producto.intNumeroExistencia -= dto.intPiezaVenta;
-            _context.Entry(producto).State = EntityState.Modified;
-            await _dbResilience.SaveChangesAsync(_context);
-
-            return (await GetByIdAsync(detalle.id))!;
         }
 
         public async Task UpdateAsync(int id, VenVentaDetalleUpdateDto dto)

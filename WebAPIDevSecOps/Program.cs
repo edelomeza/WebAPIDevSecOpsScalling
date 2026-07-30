@@ -23,6 +23,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
+using MassTransit;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
@@ -294,6 +295,8 @@ else
 }
 
 builder.Services.AddResponseCaching();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IUserAccessor, UserAccessor>();
 
 builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Configuration.GetSection("PasswordHashing"));
@@ -310,8 +313,24 @@ builder.Services.AddScoped<IProductoService, ProductoService>();
 builder.Services.AddScoped<IVentaService, VentaService>();
 builder.Services.AddScoped<IVentaDetalleService, VentaDetalleService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
-builder.Services.AddScoped<IEventPublisher, InMemoryEventPublisher>();
+builder.Services.AddScoped<IEventPublisher, MassTransitEventPublisher>();
 builder.Services.AddScoped<IVentasPedidoService, VentasPedidoService>();
+builder.Services.AddScoped<IPagoService, PagoService>();
+builder.Services.AddScoped<IFacturaService, FacturaService>();
+builder.Services.AddScoped<ICompensationService, CompensationService>();
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<WebAPIDevSecOps.Consumers.StockValidatorConsumer>();
+    x.AddConsumer<WebAPIDevSecOps.Consumers.PagoConsumer>();
+    x.AddConsumer<WebAPIDevSecOps.Consumers.FacturaConsumer>();
+    x.AddConsumer<WebAPIDevSecOps.Consumers.CompensationConsumer>();
+
+    x.UsingInMemory((context, cfg) =>
+    {
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);

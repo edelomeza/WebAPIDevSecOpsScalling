@@ -35,9 +35,13 @@ namespace WebAPIDevSecOps.Services
             if (pedido == null)
                 throw new ArgumentException($"El pedido con ID {pedidoId} no existe.");
 
-            if (pedido.strEstadoSaga != "Pendiente")
+            if (pedido.strEstadoSaga != "Pendiente" && pedido.strEstadoSaga != "StockValidado")
                 throw new InvalidOperationException(
-                    $"El pedido no está en estado Pendiente (actual: {pedido.strEstadoSaga}).");
+                    $"El pedido no está en estado Pendiente ni StockValidado (actual: {pedido.strEstadoSaga}).");
+
+            if (monto != pedido.decTotal)
+                throw new ArgumentException(
+                    $"El monto {monto} no coincide con el total del pedido {pedido.decTotal}.");
 
             var exito = RandomNumberGenerator.GetInt32(100) < 90;
             var idTransaccion = $"TXN-{Guid.NewGuid():N}";

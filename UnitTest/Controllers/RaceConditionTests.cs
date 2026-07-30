@@ -48,7 +48,7 @@ public class RaceConditionTests
         });
         db.SegUsuario.Add(new SegUsuario
         {
-            strNombre = "usuariorace",
+            strNombre = "admin",
             strCorreoElectronico = "usuariorace@test.com",
             strPWD = "hash",
         });
@@ -56,7 +56,7 @@ public class RaceConditionTests
 
         var producto = db.ProProducto.First(p => p.strNombreProducto == "productorace");
         var cliente = db.CliCliente.First(c => c.strNombreCliente == "clienteunico");
-        var usuario = db.SegUsuario.First(u => u.strNombre == "usuariorace");
+        var usuario = db.SegUsuario.First(u => u.strNombre == "admin");
 
         var venta = new VenVenta
         {
@@ -92,8 +92,8 @@ public class RaceConditionTests
         var successCount = statuses.Count(s => s == HttpStatusCode.Created);
         var failCount = statuses.Count(s => s == HttpStatusCode.BadRequest);
 
-        successCount.Should().BeLessThan(5);
-        failCount.Should().BeGreaterThan(0);
+        successCount.Should().Be(1);
+        failCount.Should().Be(4);
 
         var productoFinal = db.ProProducto.AsNoTracking().First(p => p.id == producto.id);
         productoFinal.intNumeroExistencia.Should().BeLessThanOrEqualTo(0);

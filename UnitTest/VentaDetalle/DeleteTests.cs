@@ -8,6 +8,7 @@ using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
@@ -31,8 +32,10 @@ namespace UnitTest.VentaDetalle
 
         private VentaDetalleController CreateController(AppDbContext context)
         {
+            var userMock = new Mock<IUserAccessor>();
+            userMock.Setup(u => u.GetCurrentUsername()).Returns("Test User");
             return new VentaDetalleController(
-                new VentaDetalleService(context, _dbResilience));
+                new VentaDetalleService(context, _dbResilience, userMock.Object));
         }
 
         private async Task<(AppDbContext context, int ventaId, int productoId)> SeedDependenciesAsync()

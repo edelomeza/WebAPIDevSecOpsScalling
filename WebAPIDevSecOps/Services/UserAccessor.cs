@@ -1,14 +1,8 @@
 using System.Security.Claims;
+using WebAPIDevSecOps.Interfaces;
 
 namespace WebAPIDevSecOps.Services
 {
-    public interface IUserAccessor
-    {
-        string? GetCurrentUsername();
-        bool IsAdmin();
-        bool IsAuthenticated();
-    }
-
     public class UserAccessor : IUserAccessor
     {
         private readonly IHttpContextAccessor _httpContextAccessor;

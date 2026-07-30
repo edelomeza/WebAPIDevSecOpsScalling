@@ -12,12 +12,23 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
+        private readonly IUserAccessor _userAccessor;
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _productLocks = new();
 
-        public VentaDetalleService(AppDbContext context, DbResilienceService dbResilience)
+        public VentaDetalleService(AppDbContext context, DbResilienceService dbResilience, IUserAccessor userAccessor)
         {
             _context = context;
             _dbResilience = dbResilience;
+            _userAccessor = userAccessor;
+        }
+
+        private async Task AssertOwnershipAsync(VenVentaDetalle detalle)
+        {
+            await _context.Entry(detalle).Reference(d => d.VenVenta).LoadAsync();
+            await _context.Entry(detalle.VenVenta!).Reference(v => v.SegUsuario).LoadAsync();
+            var username = _userAccessor.GetCurrentUsername();
+            if (!string.Equals(detalle.VenVenta!.SegUsuario?.strNombre, username, StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("No tiene permiso para acceder a este detalle de venta.");
         }
 
         public async Task<PagedResult<VenVentaDetalleDto>> GetAllAsync(QueryParams? queryParams = null)
@@ -54,22 +65,25 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<VenVentaDetalleDto?> GetByIdAsync(int id)
         {
-            return await _context.Set<VenVentaDetalle>()
-                .AsNoTracking()
+            var detalle = await _context.Set<VenVentaDetalle>()
                 .Include(vd => vd.ProProducto)
-                .Where(vd => vd.id == id)
-                .Select(vd => new VenVentaDetalleDto
-                {
-                    id = vd.id,
-                    idVenVenta = vd.idVenVenta,
-                    idProProducto = vd.idProProducto,
-                    strNombreProducto = vd.ProProducto != null ? vd.ProProducto.strNombreProducto : null,
-                    decPrecio = vd.ProProducto != null ? vd.ProProducto.decPrecio : 0,
-                    intPiezaVenta = vd.intPiezaVenta,
-                    decTotalVenta = vd.decTotalVenta,
-                    RowVersion = vd.RowVersion,
-                })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(vd => vd.id == id);
+
+            if (detalle == null) return null;
+
+            await AssertOwnershipAsync(detalle);
+
+            return new VenVentaDetalleDto
+            {
+                id = detalle.id,
+                idVenVenta = detalle.idVenVenta,
+                idProProducto = detalle.idProProducto,
+                strNombreProducto = detalle.ProProducto?.strNombreProducto,
+                decPrecio = detalle.ProProducto?.decPrecio ?? 0,
+                intPiezaVenta = detalle.intPiezaVenta,
+                decTotalVenta = detalle.decTotalVenta,
+                RowVersion = detalle.RowVersion,
+            };
         }
 
         public async Task<IEnumerable<ProProductoAutocompleteDto>> AutocompleteProductoAsync(string texto, int maxResultados = 10)
@@ -89,10 +103,15 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<VenVentaDetalleDto> CreateAsync(VenVentaDetalleCreateDto dto)
         {
-            if (!await _context.Set<VenVenta>().AnyAsync(v => v.id == dto.idVenVenta))
+            var venta = await _context.Set<VenVenta>().Include(v => v.SegUsuario).FirstOrDefaultAsync(v => v.id == dto.idVenVenta);
+            if (venta == null)
             {
                 throw new ArgumentException("La venta especificada no existe.");
             }
+
+            var usuario = _userAccessor.GetCurrentUsername();
+            if (!string.Equals(venta.SegUsuario?.strNombre, usuario, StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("No tiene permiso para agregar detalles a esta venta.");
 
             var semaphore = _productLocks.GetOrAdd(dto.idProProducto, _ => new SemaphoreSlim(1, 1));
             await semaphore.WaitAsync();
@@ -143,6 +162,8 @@ namespace WebAPIDevSecOps.Services
 
             if (detalle == null)
                 throw new KeyNotFoundException("Detalle no encontrado.");
+
+            await AssertOwnershipAsync(detalle);
 
             var ventaExiste = await _context.Set<VenVenta>().AnyAsync(v => v.id == dto.idVenVenta);
             if (!ventaExiste)
@@ -198,6 +219,8 @@ namespace WebAPIDevSecOps.Services
 
             if (detalle == null)
                 throw new KeyNotFoundException("Detalle no encontrado.");
+
+            await AssertOwnershipAsync(detalle);
 
             if (dto.RowVersion is { Length: > 0 })
                 _context.Entry(detalle).Property("RowVersion").OriginalValue = dto.RowVersion;

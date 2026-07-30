@@ -262,7 +262,9 @@ public class TransactionIntegrityTests
             context.SaveChanges();
 
             var ventaService = new VentaService(context, dbResilience);
-            var detalleService = new VentaDetalleService(context, dbResilience);
+            var userMock = new Mock<IUserAccessor>();
+            userMock.Setup(u => u.GetCurrentUsername()).Returns("pbuser");
+            var detalleService = new VentaDetalleService(context, dbResilience, userMock.Object);
 
             var ventaDto = new VenVentaCreateDto
             {

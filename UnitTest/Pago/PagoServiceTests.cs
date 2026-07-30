@@ -89,6 +89,18 @@ public class PagoServiceTests
     }
 
     [Fact]
+    public async Task ProcesarPagoAsync_WithStockValidadoEstadoSaga_DoesNotThrow()
+    {
+        var context = DbContextMock.GetDbContext();
+        var pedido = SeedPedido(context, "StockValidado");
+        var service = CreateService(context, out var eventPublisherMock);
+
+        var act = () => service.ProcesarPagoAsync(pedido.id, "Tarjeta", 100.50m);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task ProcesarPagoAsync_PublishesEvent_And_CreatesPagoRecord()
     {
         var context = DbContextMock.GetDbContext();

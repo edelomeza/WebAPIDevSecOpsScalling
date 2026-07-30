@@ -31,12 +31,12 @@ namespace WebAPIDevSecOps.Services
             return query.Where(c => c.strCreadoPorUsuario == username);
         }
 
-        private void AssertOwnership(CliCliente cliente)
+        private void AssertOwnership(string? creadoPorUsuario)
         {
             if (_userAccessor.IsAdmin())
                 return;
             var username = _userAccessor.GetCurrentUsername();
-            if (cliente.strCreadoPorUsuario != username)
+            if (creadoPorUsuario != username)
                 throw new UnauthorizedAccessException("No tiene permisos para acceder a este recurso.");
         }
 
@@ -56,6 +56,7 @@ namespace WebAPIDevSecOps.Services
                         strCorreoElectronico = c.strCorreoElectronico,
                         strNumeroTelefono = c.strNumeroTelefono,
                         RowVersion = c.RowVersion,
+                        strCreadoPorUsuario = c.strCreadoPorUsuario,
                     });
 
                 var totalCount = await query.CountAsync();
@@ -86,6 +87,7 @@ namespace WebAPIDevSecOps.Services
                     strCorreoElectronico = c.strCorreoElectronico,
                     strNumeroTelefono = c.strNumeroTelefono,
                     RowVersion = c.RowVersion,
+                    strCreadoPorUsuario = c.strCreadoPorUsuario,
                 });
 
             var totalCount = await query.CountAsync();
@@ -119,7 +121,11 @@ namespace WebAPIDevSecOps.Services
         {
             var key = $"cache:cliente:{id}";
             var cached = await _cache.GetAsync<CliClienteDto>(key);
-            if (cached is not null) return cached;
+            if (cached is not null)
+            {
+                AssertOwnership(cached.strCreadoPorUsuario);
+                return cached;
+            }
 
             var cliente = await _context.CliCliente
                 .AsNoTracking()
@@ -127,7 +133,7 @@ namespace WebAPIDevSecOps.Services
 
             if (cliente == null) return null;
 
-            AssertOwnership(cliente);
+            AssertOwnership(cliente.strCreadoPorUsuario);
 
             var dto = new CliClienteDto
             {
@@ -137,6 +143,7 @@ namespace WebAPIDevSecOps.Services
                 strCorreoElectronico = cliente.strCorreoElectronico,
                 strNumeroTelefono = cliente.strNumeroTelefono,
                 RowVersion = cliente.RowVersion,
+                strCreadoPorUsuario = cliente.strCreadoPorUsuario,
             };
 
             await _cache.SetAsync(key, dto, TimeSpan.FromSeconds(60));
@@ -172,6 +179,7 @@ namespace WebAPIDevSecOps.Services
                 strCorreoElectronico = cliente.strCorreoElectronico,
                 strNumeroTelefono = cliente.strNumeroTelefono,
                 RowVersion = cliente.RowVersion,
+                strCreadoPorUsuario = cliente.strCreadoPorUsuario,
             };
         }
 
@@ -193,7 +201,7 @@ namespace WebAPIDevSecOps.Services
                 throw new KeyNotFoundException("Cliente no encontrado.");
             }
 
-            AssertOwnership(cliente);
+            AssertOwnership(cliente.strCreadoPorUsuario);
 
             bool correoEnUso = clientes.Any(c => c.strCorreoElectronico == dto.strCorreoElectronico && c.id != id);
             if (correoEnUso)
@@ -227,7 +235,7 @@ namespace WebAPIDevSecOps.Services
                 throw new KeyNotFoundException("Cliente no encontrado.");
             }
 
-            AssertOwnership(cliente);
+            AssertOwnership(cliente.strCreadoPorUsuario);
 
             _context.Entry(cliente).Property("RowVersion").OriginalValue = dto.RowVersion;
             _context.CliCliente.Remove(cliente);

@@ -3,17 +3,20 @@ using Microsoft.EntityFrameworkCore;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Events;
 using WebAPIDevSecOps.Models;
+using WebAPIDevSecOps.Services;
 
 namespace WebAPIDevSecOps.Consumers
 {
     public class StockValidatorConsumer : IConsumer<PedidoCreadoEvent>
     {
         private readonly AppDbContext _context;
+        private readonly DbResilienceService _dbResilience;
         private readonly ILogger<StockValidatorConsumer> _logger;
 
-        public StockValidatorConsumer(AppDbContext context, ILogger<StockValidatorConsumer> logger)
+        public StockValidatorConsumer(AppDbContext context, DbResilienceService dbResilience, ILogger<StockValidatorConsumer> logger)
         {
             _context = context;
+            _dbResilience = dbResilience;
             _logger = logger;
         }
 
@@ -51,7 +54,7 @@ namespace WebAPIDevSecOps.Consumers
                     pedido.strEstadoSaga = "StockValidado";
                 }
 
-                await _context.SaveChangesAsync();
+                await _dbResilience.SaveChangesAsync(_context);
 
                 await context.Publish(new StockValidadoEvent
                 {
@@ -68,7 +71,7 @@ namespace WebAPIDevSecOps.Consumers
                     pedido.strMotivoRechazo = $"Productos sin stock: {string.Join(", ", productosSinStock)}";
                 }
 
-                await _context.SaveChangesAsync();
+                await _dbResilience.SaveChangesAsync(_context);
 
                 await context.Publish(new StockRechazadoEvent
                 {

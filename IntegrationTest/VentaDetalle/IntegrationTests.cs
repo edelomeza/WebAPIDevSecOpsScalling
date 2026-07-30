@@ -59,7 +59,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
 
         var usuario = new SegUsuario
         {
-            strNombre = $"intuser{Guid.NewGuid():N}"[..20],
+            strNombre = "admin",
             strPWD = "hash",
             strCorreoElectronico = $"intusr{Guid.NewGuid():N}@test.com",
             RowVersion = new byte[] { 1, 0, 0, 0 }

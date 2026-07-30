@@ -31,12 +31,12 @@ namespace WebAPIDevSecOps.Services
             return query.Where(p => p.strCreadoPorUsuario == username);
         }
 
-        private void AssertOwnership(ProProducto producto)
+        private void AssertOwnership(string? creadoPorUsuario)
         {
             if (_userAccessor.IsAdmin())
                 return;
             var username = _userAccessor.GetCurrentUsername();
-            if (producto.strCreadoPorUsuario != username)
+            if (creadoPorUsuario != username)
                 throw new UnauthorizedAccessException("No tiene permisos para acceder a este recurso.");
         }
 
@@ -57,6 +57,7 @@ namespace WebAPIDevSecOps.Services
                         intNumeroExistencia = x.intNumeroExistencia,
                         decPrecio = x.decPrecio,
                         RowVersion = x.RowVersion,
+                        strCreadoPorUsuario = x.strCreadoPorUsuario,
                     });
 
                 var totalCount = await query.CountAsync();
@@ -88,6 +89,7 @@ namespace WebAPIDevSecOps.Services
                     intNumeroExistencia = x.intNumeroExistencia,
                     decPrecio = x.decPrecio,
                     RowVersion = x.RowVersion,
+                    strCreadoPorUsuario = x.strCreadoPorUsuario,
                 });
 
             var totalCount = await query.CountAsync();
@@ -107,7 +109,11 @@ namespace WebAPIDevSecOps.Services
         {
             var key = $"cache:producto:{id}";
             var cached = await _cache.GetAsync<ProProductoDto>(key);
-            if (cached is not null) return cached;
+            if (cached is not null)
+            {
+                AssertOwnership(cached.strCreadoPorUsuario);
+                return cached;
+            }
 
             var producto = await _context.ProProducto
                 .AsNoTracking()
@@ -115,7 +121,7 @@ namespace WebAPIDevSecOps.Services
 
             if (producto == null) return null;
 
-            AssertOwnership(producto);
+            AssertOwnership(producto.strCreadoPorUsuario);
 
             var dto = new ProProductoDto
             {
@@ -126,6 +132,7 @@ namespace WebAPIDevSecOps.Services
                 intNumeroExistencia = producto.intNumeroExistencia,
                 decPrecio = producto.decPrecio,
                 RowVersion = producto.RowVersion,
+                strCreadoPorUsuario = producto.strCreadoPorUsuario,
             };
 
             await _cache.SetAsync(key, dto, TimeSpan.FromSeconds(60));
@@ -157,6 +164,7 @@ namespace WebAPIDevSecOps.Services
                 intNumeroExistencia = producto.intNumeroExistencia,
                 decPrecio = producto.decPrecio,
                 RowVersion = producto.RowVersion,
+                strCreadoPorUsuario = producto.strCreadoPorUsuario,
             };
         }
 
@@ -175,7 +183,7 @@ namespace WebAPIDevSecOps.Services
                 throw new KeyNotFoundException("Producto no encontrado.");
             }
 
-            AssertOwnership(producto);
+            AssertOwnership(producto.strCreadoPorUsuario);
 
             if (dto.RowVersion is { Length: > 0 })
             {
@@ -204,7 +212,7 @@ namespace WebAPIDevSecOps.Services
                 throw new KeyNotFoundException("Producto no encontrado.");
             }
 
-            AssertOwnership(producto);
+            AssertOwnership(producto.strCreadoPorUsuario);
 
             if (dto.RowVersion is { Length: > 0 })
             {

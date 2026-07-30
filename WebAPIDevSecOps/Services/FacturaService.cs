@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Events;
@@ -9,6 +10,8 @@ namespace WebAPIDevSecOps.Services
 {
     public class FacturaService : IFacturaService
     {
+        private static readonly ConcurrentDictionary<int, long> _folioCounters = new();
+        private static readonly object _initLock = new();
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
         private readonly IEventPublisher _eventPublisher;
@@ -28,57 +31,89 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<FacturaResponseDto> GenerarFacturaAsync(Guid pedidoId, string? rfc = null)
         {
-            var pedido = await _context.Set<VenPedido>()
-                .Include(p => p.Detalles)
-                .FirstOrDefaultAsync(p => p.id == pedidoId);
-
-            if (pedido == null)
-                throw new ArgumentException($"El pedido con ID {pedidoId} no existe.");
-
-            if (pedido.strEstadoSaga != "Pagado")
-                throw new InvalidOperationException(
-                    $"El pedido no está en estado Pagado (actual: {pedido.strEstadoSaga}).");
-
-            var year = DateTime.UtcNow.Year;
-            var maxFolio = await _context.Set<VenPedidoFactura>()
-                .Where(f => f.strFolioFactura.StartsWith($"F-{year}-"))
-                .CountAsync();
-
-            var folio = $"F-{year}-{maxFolio + 1:D5}";
-
-            var factura = new VenPedidoFactura
+            try
             {
-                idVenPedido = pedidoId,
-                strFolioFactura = folio,
-                strRFC = rfc,
-                decTotal = pedido.decTotal,
-                dteFechaEmision = DateTime.UtcNow,
-                strEstado = "Emitida",
-            };
+                var pedido = await _context.Set<VenPedido>()
+                    .Include(p => p.Detalles)
+                    .FirstOrDefaultAsync(p => p.id == pedidoId);
 
-            _context.Set<VenPedidoFactura>().Add(factura);
-            pedido.strEstadoSaga = "Facturado";
+                if (pedido == null)
+                    throw new ArgumentException($"El pedido con ID {pedidoId} no existe.");
 
-            await _dbResilience.SaveChangesAsync(_context);
+                if (pedido.strEstadoSaga != "Pagado")
+                    throw new InvalidOperationException(
+                        $"El pedido no está en estado Pagado (actual: {pedido.strEstadoSaga}).");
 
-            _logger.LogInformation("Factura generada: Pedido {PedidoId}, Folio {Folio}", pedidoId, folio);
+                var year = DateTime.UtcNow.Year;
 
-            await _eventPublisher.PublishAsync(new FacturaGeneradoEvent
+                var counter = _folioCounters.GetOrAdd(year, y =>
+                {
+                    lock (_initLock)
+                    {
+                        return _context.Set<VenPedidoFactura>()
+                            .Where(f => f.strFolioFactura.StartsWith($"F-{y}-"))
+                            .Count();
+                    }
+                });
+
+                var folioNum = Interlocked.Increment(ref counter);
+                _folioCounters.TryUpdate(year, folioNum, counter - 1);
+
+                var folio = $"F-{year}-{folioNum:D5}";
+
+                var factura = new VenPedidoFactura
+                {
+                    idVenPedido = pedidoId,
+                    strFolioFactura = folio,
+                    strRFC = rfc,
+                    decTotal = pedido.decTotal,
+                    dteFechaEmision = DateTime.UtcNow,
+                    strEstado = "Emitida",
+                };
+
+                _context.Set<VenPedidoFactura>().Add(factura);
+                pedido.strEstadoSaga = "Facturado";
+
+                await _dbResilience.SaveChangesAsync(_context);
+
+                _logger.LogInformation("Factura generada: Pedido {PedidoId}, Folio {Folio}", pedidoId, folio);
+
+                await _eventPublisher.PublishAsync(new FacturaGeneradoEvent
+                {
+                    PedidoId = pedidoId,
+                    FolioFactura = folio,
+                });
+
+                return new FacturaResponseDto
+                {
+                    id = factura.id,
+                    idVenPedido = factura.idVenPedido,
+                    strFolioFactura = factura.strFolioFactura,
+                    strRFC = factura.strRFC,
+                    decTotal = factura.decTotal,
+                    dteFechaEmision = factura.dteFechaEmision,
+                    strEstado = factura.strEstado,
+                };
+            }
+            catch (Exception ex)
             {
-                PedidoId = pedidoId,
-                FolioFactura = folio,
-            });
+                _logger.LogError(ex, "Error al generar factura para pedido {PedidoId}", pedidoId);
 
-            return new FacturaResponseDto
-            {
-                id = factura.id,
-                idVenPedido = factura.idVenPedido,
-                strFolioFactura = factura.strFolioFactura,
-                strRFC = factura.strRFC,
-                decTotal = factura.decTotal,
-                dteFechaEmision = factura.dteFechaEmision,
-                strEstado = factura.strEstado,
-            };
+                try
+                {
+                    await _eventPublisher.PublishAsync(new FacturaRechazadaEvent
+                    {
+                        PedidoId = pedidoId,
+                        Motivo = ex.Message,
+                    });
+                }
+                catch (Exception pubEx)
+                {
+                    _logger.LogError(pubEx, "Error al publicar FacturaRechazadaEvent para pedido {PedidoId}", pedidoId);
+                }
+
+                throw;
+            }
         }
 
         public async Task<bool> CancelarFacturaAsync(int facturaId)

@@ -39,23 +39,23 @@
 
 | # | Paso | Origen | Tarea | Descripción | Archivos | Depende de |
 |---|---|---|---|---|---|---|
-| 2.1 | ⬜ | `[MP] Etapa 5.2` | PagoService | `ProcesarPagoAsync` (simula 90% éxito), `ReembolsarPagoAsync`. Crea registro en `VenPedidoPago` | `Services/PagoService.cs` (nuevo) | 1.17 |
-| 2.2 | ⬜ | `[MP] Etapa 5.3` | FacturaService | `GenerarFacturaAsync` con folio `F-{año}-{seq}` desde Redis, `CancelarFacturaAsync`. Crea registro en `VenPedidoFactura` | `Services/FacturaService.cs` (nuevo) | 2.1 |
-| 2.3 | ⬜ | `[MP] Etapa 5.4` | CompensationService | Nivel 1: `CompensarPorPagoRechazado` — liberar stock. Nivel 2: `CompensarPorFacturaRechazada` — reembolsar pago + liberar stock | `Services/CompensationService.cs` (nuevo) | 2.2 |
-| 2.4 | ⬜ | `[MP] Etapa 5.5` | Registrar servicios en DI | `Program.cs`: AddScoped para PagoService, FacturaService, CompensationService | `Program.cs` | 2.3 |
-| 2.5 | ⬜ | `[MP] Etapa 6.5` | NuGets MassTransit + SQS | Agregar packages MassTransit y MassTransit.AmazonSQS al .csproj | `WebAPIDevSecOps.csproj` | 1.17 |
-| 2.6 | ⬜ | `[MP] Etapa 6.6` | Configurar MassTransit InMemory | Configurar bus InMemory para desarrollo local (sin dependencia AWS) | `Program.cs` | 2.5 |
-| 2.7 | ⬜ | `[MP] Etapa 6.1` | StockValidatorConsumer | Consume `PedidoCreadoEvent`, valida existencias, descuenta stock si OK, publica `StockValidadoEvent` o `StockRechazadoEvent` | `Consumers/StockValidatorConsumer.cs` (nuevo) | 2.6 |
-| 2.8 | ⬜ | `[MP] Etapa 6.2` | PagoConsumer | Consume `StockValidadoEvent`, llama a PagoService, publica `PagoProcesadoEvent` o `PagoRechazadoEvent` | `Consumers/PagoConsumer.cs` (nuevo) | 2.7 |
-| 2.9 | ⬜ | `[MP] Etapa 6.3` | FacturaConsumer | Consume `PagoProcesadoEvent`, llama a FacturaService, publica `FacturaGeneradoEvent` o `FacturaRechazadaEvent` | `Consumers/FacturaConsumer.cs` (nuevo) | 2.8 |
-| 2.10 | ⬜ | `[MP] Etapa 6.4` | CompensationConsumer | Escucha `PagoRechazadoEvent` + `FacturaRechazadaEvent`, ejecuta compensación según nivel | `Consumers/CompensationConsumer.cs` (nuevo) | 2.9 |
-| 2.11 | ⬜ | `[MP] Etapa 6.7` | Configurar MassTransit AmazonSQS | Configurar transporte SQS para producción (condicional por variable de entorno) | `Program.cs` | 2.10 |
-| 2.12 | ⬜ | `[MQA] F6.1` | Test: Race condition en venta/stock | Producto con existencia=1, 5 POST `/api/v1/venta` en paralelo → solo 1 éxito, 4 fallos 400 | `UnitTest/Controllers/RaceConditionTests.cs` (nuevo) | 2.1 |
-| 2.13 | ⬜ | `[MQA] F9.1` | Test: Usuario A no ve cliente del B | Integration test: crear Cliente con usuario A, GET con token de B → 403 | `IntegrationTest/AuthorizationTests.cs` (nuevo) | 1.1 |
-| 2.14 | ⬜ | `[MQA] F9.2` | Test: Usuario A no modifica producto del B | Integration test: crear Producto con A, PUT con token de B → 403 | `IntegrationTest/AuthorizationTests.cs` | 2.13 |
-| 2.15 | ⬜ | `[MQA] F9.3` | Test: Admin puede ver/modificar cualquier recurso | Integration test: Admin hace GET/PUT sobre recurso ajeno → 200 | `IntegrationTest/AuthorizationTests.cs` | 2.14 |
-| 2.16 | ⬜ | `[MQA] F9.4` | Implementar ownership checks | En `ClienteService`, `ProductoService`, etc.: verificar que usuario autenticado es dueño o es Admin. Si no, `ForbiddenAccessException` | `Services/*Service.cs` | 2.15 |
-| 2.17 | ⬜ | `[MQA] F12.5` | Property-based testing (FsCheck) | Tests de integridad transaccional: generar secuencias CRUD aleatorias, verificar estado final consistente | `UnitTest/PropertyBased/TransactionIntegrityTests.cs` (nuevo) | 1.1 |
+| 2.1 | ✅ | `[MP] Etapa 5.2` | PagoService | `ProcesarPagoAsync` (simula 90% éxito), `ReembolsarPagoAsync`. Crea registro en `VenPedidoPago` | `Services/PagoService.cs` (nuevo) | 1.17 |
+| 2.2 | ✅ | `[MP] Etapa 5.3` | FacturaService | `GenerarFacturaAsync` con folio `F-{año}-{seq}` desde Redis, `CancelarFacturaAsync`. Crea registro en `VenPedidoFactura` | `Services/FacturaService.cs` (nuevo) | 2.1 |
+| 2.3 | ✅ | `[MP] Etapa 5.4` | CompensationService | Nivel 1: `CompensarPorPagoRechazado` — liberar stock. Nivel 2: `CompensarPorFacturaRechazada` — reembolsar pago + liberar stock | `Services/CompensationService.cs` (nuevo) | 2.2 |
+| 2.4 | ✅ | `[MP] Etapa 5.5` | Registrar servicios en DI | `Program.cs`: AddScoped para PagoService, FacturaService, CompensationService | `Program.cs` | 2.3 |
+| 2.5 | ✅ | `[MP] Etapa 6.5` | NuGets MassTransit + SQS | Agregar packages MassTransit y MassTransit.AmazonSQS al .csproj | `WebAPIDevSecOps.csproj` | 1.17 |
+| 2.6 | ✅ | `[MP] Etapa 6.6` | Configurar MassTransit InMemory | Configurar bus InMemory para desarrollo local (sin dependencia AWS) | `Program.cs` | 2.5 |
+| 2.7 | ✅ | `[MP] Etapa 6.1` | StockValidatorConsumer | Consume `PedidoCreadoEvent`, valida existencias, descuenta stock si OK, publica `StockValidadoEvent` o `StockRechazadoEvent` | `Consumers/StockValidatorConsumer.cs` (nuevo) | 2.6 |
+| 2.8 | ✅ | `[MP] Etapa 6.2` | PagoConsumer | Consume `StockValidadoEvent`, llama a PagoService, publica `PagoProcesadoEvent` o `PagoRechazadoEvent` | `Consumers/PagoConsumer.cs` (nuevo) | 2.7 |
+| 2.9 | ✅ | `[MP] Etapa 6.3` | FacturaConsumer | Consume `PagoProcesadoEvent`, llama a FacturaService, publica `FacturaGeneradoEvent` o `FacturaRechazadaEvent` | `Consumers/FacturaConsumer.cs` (nuevo) | 2.8 |
+| 2.10 | ✅ | `[MP] Etapa 6.4` | CompensationConsumer | Escucha `PagoRechazadoEvent` + `FacturaRechazadaEvent`, ejecuta compensación según nivel | `Consumers/CompensationConsumer.cs` (nuevo) | 2.9 |
+| 2.11 | ❌ | `[MP] Etapa 6.7` | Configurar MassTransit AmazonSQS | Configurar transporte SQS para producción (condicional por variable de entorno) | `Program.cs` | 2.10 |
+| 2.12 | ✅ | `[MQA] F6.1` | Test: Race condition en venta/stock | Producto con existencia=1, 5 POST `/api/v1/venta` en paralelo → solo 1 éxito, 4 fallos 400 | `UnitTest/Controllers/RaceConditionTests.cs` (nuevo) | 2.1 |
+| 2.13 | ✅ | `[MQA] F9.1` | Test: Usuario A no ve cliente del B | Integration test: crear Cliente con usuario A, GET con token de B → 403 | `IntegrationTest/AuthorizationTests.cs` (nuevo) | 1.1 |
+| 2.14 | ✅ | `[MQA] F9.2` | Test: Usuario A no modifica producto del B | Integration test: crear Producto con A, PUT con token de B → 403 | `IntegrationTest/AuthorizationTests.cs` | 2.13 |
+| 2.15 | ✅ | `[MQA] F9.3` | Test: Admin puede ver/modificar cualquier recurso | Integration test: Admin hace GET/PUT sobre recurso ajeno → 200 | `IntegrationTest/AuthorizationTests.cs` | 2.14 |
+| 2.16 | ✅ | `[MQA] F9.4` | Implementar ownership checks | En `ClienteService`, `ProductoService`, etc.: verificar que usuario autenticado es dueño o es Admin. Si no, `ForbiddenAccessException` | `Services/*Service.cs` | 2.15 |
+| 2.17 | ✅ | `[MQA] F12.5` | Property-based testing (FsCheck) | Tests de integridad transaccional: generar secuencias CRUD aleatorias, verificar estado final consistente | `UnitTest/PropertyBased/TransactionIntegrityTests.cs` (nuevo) | 1.1 |
 
 ---
 

@@ -179,8 +179,8 @@ namespace WebAPIDevSecOps.Services
             var claims = new[]
             {
                 new Claim(JwtRegisteredClaimNames.Sub, username),
+                new Claim(ClaimTypes.NameIdentifier, username),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Role, "Admin")
             };
 
             var token = new JwtSecurityToken(

@@ -11,12 +11,33 @@ namespace WebAPIDevSecOps.Services
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
         private readonly ICacheService _cache;
+        private readonly IUserAccessor _userAccessor;
 
-        public ClienteService(AppDbContext context, DbResilienceService dbResilience, ICacheService cache)
+        public ClienteService(AppDbContext context, DbResilienceService dbResilience, ICacheService cache, IUserAccessor userAccessor)
         {
             _context = context;
             _dbResilience = dbResilience;
             _cache = cache;
+            _userAccessor = userAccessor;
+        }
+
+        private IQueryable<CliCliente> ApplyOwnershipFilter(IQueryable<CliCliente> query)
+        {
+            if (_userAccessor.IsAdmin())
+                return query;
+            var username = _userAccessor.GetCurrentUsername();
+            if (username == null)
+                return query.Where(c => false);
+            return query.Where(c => c.strCreadoPorUsuario == username);
+        }
+
+        private void AssertOwnership(string? creadoPorUsuario)
+        {
+            if (_userAccessor.IsAdmin())
+                return;
+            var username = _userAccessor.GetCurrentUsername();
+            if (creadoPorUsuario != username)
+                throw new UnauthorizedAccessException("No tiene permisos para acceder a este recurso.");
         }
 
         public async Task<PagedResult<CliClienteDto>> GetAllAsync(QueryParams? queryParams = null)
@@ -26,8 +47,7 @@ namespace WebAPIDevSecOps.Services
 
             return await _cache.GetOrCreateAsync(key, async () =>
             {
-                var query = _context.CliCliente
-                    .AsNoTracking()
+                var query = ApplyOwnershipFilter(_context.CliCliente.AsNoTracking())
                     .Select(c => new CliClienteDto
                     {
                         id = c.id,
@@ -36,6 +56,7 @@ namespace WebAPIDevSecOps.Services
                         strCorreoElectronico = c.strCorreoElectronico,
                         strNumeroTelefono = c.strNumeroTelefono,
                         RowVersion = c.RowVersion,
+                        strCreadoPorUsuario = c.strCreadoPorUsuario,
                     });
 
                 var totalCount = await query.CountAsync();
@@ -56,8 +77,7 @@ namespace WebAPIDevSecOps.Services
         {
             var p = queryParams ?? new QueryParams();
 
-            var query = _context.CliCliente
-                .AsNoTracking()
+            var query = ApplyOwnershipFilter(_context.CliCliente.AsNoTracking())
                 .Where(c => c.strNombreCliente.ToLower().Contains(texto.ToLower()))
                 .Select(c => new CliClienteDto
                 {
@@ -67,6 +87,7 @@ namespace WebAPIDevSecOps.Services
                     strCorreoElectronico = c.strCorreoElectronico,
                     strNumeroTelefono = c.strNumeroTelefono,
                     RowVersion = c.RowVersion,
+                    strCreadoPorUsuario = c.strCreadoPorUsuario,
                 });
 
             var totalCount = await query.CountAsync();
@@ -84,8 +105,7 @@ namespace WebAPIDevSecOps.Services
 
         public async Task<IEnumerable<CliClienteAutocompleteDto>> AutocompleteAsync(string texto, int maxResultados = 10)
         {
-            return await _context.CliCliente
-                .AsNoTracking()
+            return await ApplyOwnershipFilter(_context.CliCliente.AsNoTracking())
                 .Where(c => c.strNombreCliente.ToLower().Contains(texto.ToLower()))
                 .OrderBy(c => c.strNombreCliente)
                 .Take(maxResultados)
@@ -101,26 +121,34 @@ namespace WebAPIDevSecOps.Services
         {
             var key = $"cache:cliente:{id}";
             var cached = await _cache.GetAsync<CliClienteDto>(key);
-            if (cached is not null) return cached;
+            if (cached is not null)
+            {
+                AssertOwnership(cached.strCreadoPorUsuario);
+                return cached;
+            }
 
             var cliente = await _context.CliCliente
                 .AsNoTracking()
-                .Where(c => c.id == id)
-                .Select(c => new CliClienteDto
-                {
-                    id = c.id,
-                    strNombreCliente = c.strNombreCliente,
-                    strDireccionCliente = c.strDireccionCliente,
-                    strCorreoElectronico = c.strCorreoElectronico,
-                    strNumeroTelefono = c.strNumeroTelefono,
-                    RowVersion = c.RowVersion,
-                })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(c => c.id == id);
 
-            if (cliente is not null)
-                await _cache.SetAsync(key, cliente, TimeSpan.FromSeconds(60));
+            if (cliente == null) return null;
 
-            return cliente;
+            AssertOwnership(cliente.strCreadoPorUsuario);
+
+            var dto = new CliClienteDto
+            {
+                id = cliente.id,
+                strNombreCliente = cliente.strNombreCliente,
+                strDireccionCliente = cliente.strDireccionCliente,
+                strCorreoElectronico = cliente.strCorreoElectronico,
+                strNumeroTelefono = cliente.strNumeroTelefono,
+                RowVersion = cliente.RowVersion,
+                strCreadoPorUsuario = cliente.strCreadoPorUsuario,
+            };
+
+            await _cache.SetAsync(key, dto, TimeSpan.FromSeconds(60));
+
+            return dto;
         }
 
         public async Task<CliClienteDto> CreateAsync(CliClienteCreateDto dto)
@@ -137,6 +165,7 @@ namespace WebAPIDevSecOps.Services
                 strDireccionCliente = dto.strDireccionCliente?.Trim(),
                 strCorreoElectronico = dto.strCorreoElectronico.Trim(),
                 strNumeroTelefono = dto.strNumeroTelefono.Trim(),
+                strCreadoPorUsuario = _userAccessor.GetCurrentUsername(),
             };
 
             _context.CliCliente.Add(cliente);
@@ -150,6 +179,7 @@ namespace WebAPIDevSecOps.Services
                 strCorreoElectronico = cliente.strCorreoElectronico,
                 strNumeroTelefono = cliente.strNumeroTelefono,
                 RowVersion = cliente.RowVersion,
+                strCreadoPorUsuario = cliente.strCreadoPorUsuario,
             };
         }
 
@@ -170,6 +200,8 @@ namespace WebAPIDevSecOps.Services
             {
                 throw new KeyNotFoundException("Cliente no encontrado.");
             }
+
+            AssertOwnership(cliente.strCreadoPorUsuario);
 
             bool correoEnUso = clientes.Any(c => c.strCorreoElectronico == dto.strCorreoElectronico && c.id != id);
             if (correoEnUso)
@@ -202,6 +234,8 @@ namespace WebAPIDevSecOps.Services
             {
                 throw new KeyNotFoundException("Cliente no encontrado.");
             }
+
+            AssertOwnership(cliente.strCreadoPorUsuario);
 
             _context.Entry(cliente).Property("RowVersion").OriginalValue = dto.RowVersion;
             _context.CliCliente.Remove(cliente);

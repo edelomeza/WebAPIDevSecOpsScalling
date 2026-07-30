@@ -18,11 +18,14 @@ namespace UnitTest.Producto
     {
         private readonly DbResilienceService _dbResilience;
         private readonly Mock<ICacheService> _cacheMock;
+        private readonly Mock<IUserAccessor> _userAccessorMock;
 
         public DeleteTests()
         {
             _dbResilience = CreateDbResilience();
             _cacheMock = new Mock<ICacheService>();
+            _userAccessorMock = new Mock<IUserAccessor>();
+            _userAccessorMock.Setup(u => u.IsAdmin()).Returns(true);
             _cacheMock
                 .Setup(x => x.GetOrCreateAsync(
                     It.IsAny<string>(),
@@ -41,7 +44,7 @@ namespace UnitTest.Producto
 
         private ProductoController CreateController(AppDbContext context)
         {
-            return new ProductoController(new ProductoService(context, _dbResilience, _cacheMock.Object));
+            return new ProductoController(new ProductoService(context, _dbResilience, _cacheMock.Object, _userAccessorMock.Object));
         }
 
         private static ProProducto CreateProducto(string nombre = "Producto Test")

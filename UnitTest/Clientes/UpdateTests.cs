@@ -18,11 +18,14 @@ namespace UnitTest.Clientes
     {
         private readonly DbResilienceService _dbResilience;
         private readonly Mock<ICacheService> _cacheMock;
+        private readonly Mock<IUserAccessor> _userAccessorMock;
 
         public UpdateTests()
         {
             _dbResilience = CreateDbResilience();
             _cacheMock = new Mock<ICacheService>();
+            _userAccessorMock = new Mock<IUserAccessor>();
+            _userAccessorMock.Setup(u => u.IsAdmin()).Returns(true);
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -34,7 +37,7 @@ namespace UnitTest.Clientes
 
         private ClienteController CreateController(AppDbContext context)
         {
-            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object));
+            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object, _userAccessorMock.Object));
         }
 
         private static CliCliente CreateSeedCliente(string nombre = "Cliente Test", string email = "cliente@test.com", string telefono = "5512345678")

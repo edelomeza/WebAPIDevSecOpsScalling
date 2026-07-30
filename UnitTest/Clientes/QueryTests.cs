@@ -17,11 +17,14 @@ namespace UnitTest.Clientes
     {
         private readonly DbResilienceService _dbResilience;
         private readonly Mock<ICacheService> _cacheMock;
+        private readonly Mock<IUserAccessor> _userAccessorMock;
 
         public QueryTests()
         {
             _dbResilience = CreateDbResilience();
             _cacheMock = new Mock<ICacheService>();
+            _userAccessorMock = new Mock<IUserAccessor>();
+            _userAccessorMock.Setup(u => u.IsAdmin()).Returns(true);
             _cacheMock
                 .Setup(x => x.GetOrCreateAsync(
                     It.IsAny<string>(),
@@ -40,7 +43,7 @@ namespace UnitTest.Clientes
 
         private ClienteController CreateController(AppDbContext context)
         {
-            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object));
+            return new ClienteController(new ClienteService(context, _dbResilience, _cacheMock.Object, _userAccessorMock.Object));
         }
 
         private AppDbContext SeedClientes(params string[] nombres)

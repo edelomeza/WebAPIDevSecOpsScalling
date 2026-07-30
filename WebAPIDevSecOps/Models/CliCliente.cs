@@ -26,5 +26,8 @@ namespace WebAPIDevSecOps.Models
         [Required]
         [StringLength(10)]
         public string strNumeroTelefono { get; set; } = null!;
+
+        [StringLength(50)]
+        public string? strCreadoPorUsuario { get; set; }
     }
 }

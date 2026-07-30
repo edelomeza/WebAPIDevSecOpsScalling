@@ -13,5 +13,7 @@ namespace WebAPIDevSecOps.Dto
 
         [Timestamp]
         public byte[] RowVersion { get; set; } = null!;
+
+        public string? strCreadoPorUsuario { get; set; }
     }
 }

@@ -5,6 +5,7 @@ COPY ["WebAPIDevSecOps/WebAPIDevSecOps.csproj", "WebAPIDevSecOps/"]
 COPY ["UnitTest/UnitTest.csproj", "UnitTest/"]
 COPY ["IntegrationTest/IntegrationTest.csproj", "IntegrationTest/"]
 COPY ["SecurityTest/SecurityTest.csproj", "SecurityTest/"]
+COPY ["DatabaseTest/DatabaseTest.csproj", "DatabaseTest/"]
 COPY ["WebAPIDevSecOps.slnx", "."]
 RUN dotnet restore
 

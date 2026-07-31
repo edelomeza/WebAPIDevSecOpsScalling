@@ -186,7 +186,7 @@ jobs:
           persist-credentials: false
 
       - name: Scan image with Dockle
-        uses: goodwithtech/dockle-action@v1
+        uses: goodwithtech/dockle-action@v0.4.15
         with:
           image: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
           exit-code: '1'

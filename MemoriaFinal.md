@@ -153,7 +153,15 @@ En concreto configura:
 - Esto reduce el tiempo de ejecución (Stryker muta todo lo que encuentra; mutar miles de líneas de POCOs tomaría horas y no aporta) y enfoca el score en lo que importa: servicios y controladores.
 3. Apunta al código y tests correctos — el config especifica qué proyecto mutar (`WebAPIDevSecOps`) y con qué suite de tests validar (`UnitTest`/`IntegrationTest`), porque Stryker no sabe solo dónde está la lógica a probar.
 Resumen: 4.2 = el "reglamento" (qué se muta, qué se excluye, qué score aprueba). Es lo que permite que 4.4 (línea base) dé un número comparable y que 4.3 (CI) tenga un gate automático. Verificado: dotnet-stryker 4.16.0 responde y acepta `--config-file`, `--threshold-*`, `--mutate`. | `MutationTest/stryker-config.json` (nuevo) | 4.1 |
-| 4.3 | ⬜ | `[MQA] F2.3` | Job CI mutation-test | Stryker en push a main (no PR), timeout 30min, publica reporte HTML como artifact | `.github/workflows/ci-cd.yml` | 4.2 |
+| 4.3 | ✅ | `[MQA] F2.3` | Job CI mutation-test | **Hecho.** Su función es automatizar la ejecución de Stryker en cada push a main, convirtiendo el mutation testing en un gate del pipeline y no en una tarea manual. En concreto:
+1. Ejecuta Stryker automáticamente — el job corre `dotnet stryker --config-file MutationTest/stryker-config.json` (el reglamento del 4.2) tras el merge a main. Sin esto, nadie ejecutaría Stryker en la práctica.
+2. Aplica el gate de thresholds (break=60) — si el mutation score cae por debajo de 60, Stryker sale con exit code ≠ 0 y el job falla → el push a main queda rojo. Así, cualquier refactor que rompa la detección de tests se detecta al instante (es el "reglamento" del 4.2 con poder de bloqueo).
+3. Publica el reporte HTML como artifact — el job sube `StrykerOutput/**/report.html` para que puedas revisar visualmente qué mutantes sobrevivieron y en qué archivos, y así saber dónde reforzar tests (insumo directo para el 4.5).
+4. Condiciones de ejecución — solo en push a main (no en PRs), como los demás jobs pesados (dockle, sonarcloud, database-test), porque:
+- Correr 500+ mutantes en cada PR tardaría demasiado y ralentizaría el ciclo de review.
+- La señal importante es la del código fusionado: si baja el score, el push falla y hay que corregir.
+5. Timeout de 30 min — Stryker con `coverage-analysis: perTest` sobre ~975 tests es lento; el timeout acota el costo del job.
+Resumen: 4.3 = el "policía" del pipeline: ejecuta Stryker en main, bloquea si el score < 60 (break) y deja el reporte HTML de supervivientes como evidencia. Es el puente entre la configuración (4.2) y la medición de línea base (4.4). Verificado local: Stryker 4.16.0 encuentra `WebAPIDevSecOps.csproj` a mutar con el config (ajuste necesario: `project` acepta el nombre del archivo, no una ruta — las rutas `solution`/`test-projects`/`mutate` sí van relativas al config file). | `.github/workflows/ci-cd.yml`, `MutationTest/stryker-config.json` | 4.2 |
 | 4.4 | ⬜ | `[MQA] F2.4` | Ejecutar Stryker línea base | `dotnet stryker --config-file MutationTest/stryker-config.json`. Reportar mutation score actual | — | 4.3 |
 | 4.5 | ⬜ | `[MQA] F2.5` | Mejorar tests donde mutation score bajo | Identificar mutantes sobrevivientes, agregar tests que los maten. Repetir hasta score ≥70% | Archivos de test varios | 4.4 |
 | 4.6 | ⬜ | `[MQA] F3.1` | Crear proyecto PerformanceTest | NBomber + NBomber.Http, OutputType Exe. Referencia a WebAPIDevSecOps | `PerformanceTest/PerformanceTest.csproj` (nuevo) | 1.1 |
@@ -319,7 +327,7 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ### FASE 4 — Validación Profunda (20 pasos)
 ```
-✅ 4.1  ✅ 4.2  ▢ 4.3  ▢ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
+✅ 4.1  ✅ 4.2  ✅ 4.3  ▢ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
 ▢ 4.9  ▢ 4.10 ▢ 4.11 ▢ 4.12 ▢ 4.13 ▢ 4.14 ▢ 4.15 ▢ 4.16
 ▢ 4.17 ▢ 4.18 ▢ 4.19 ▢ 4.20
 ```
@@ -337,8 +345,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ---
 
-**Total: 97 pasos | ✅ 60% completado (58/97)**
+**Total: 97 pasos | ✅ 61% completado (59/97)**
 
 ```
-Progreso: ██████████████████████████████████████████████████ 60%
+Progreso: ██████████████████████████████████████████████████ 61%
 ```

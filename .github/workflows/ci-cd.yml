@@ -56,7 +56,7 @@ jobs:
         run: dotnet test UnitTest/UnitTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=unit-test-results.trx"
 
       - name: Run Integration Tests
-        run: dotnet test IntegrationTest/IntegrationTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=integration-test-results.trx"
+        run: dotnet test IntegrationTest/IntegrationTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=integration-test-results.trx" --blame-crash --blame-hang-timeout 10m
 
       - name: Run Security Tests
         run: dotnet test SecurityTest/SecurityTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=security-test-results.trx"
@@ -86,7 +86,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: "**/*.trx"
+          path: |
+            **/*.trx
+            **/*.dmp
+            **/Sequence_*.xml
 
   docker-build:
     name: Docker Build

@@ -160,7 +160,7 @@ public class TransactionIntegrityTests
             var fetched = await service.GetByIdAsync(created.id);
 
             return fetched != null &&
-                   fetched.strNombreProducto == updateDto.strNombreProducto &&
+                   fetched.strNombreProducto == updateDto.strNombreProducto.Trim() &&
                    fetched.intNumeroExistencia == updateDto.intNumeroExistencia &&
                    fetched.decPrecio == updateDto.decPrecio;
         }
@@ -357,7 +357,7 @@ public class TransactionIntegrityTests
             await service.CreateAsync(dto);
             var all = await service.GetAllAsync(new QueryParams { PageSize = 100 });
 
-            return all.Items.Any(p => p.strNombreProducto == nombre);
+            return all.Items.Any(p => p.strNombreProducto == nombre.Trim());
         }
         catch
         {

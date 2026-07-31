@@ -10,8 +10,6 @@ namespace WebAPIDevSecOps.Dto
 
         public string strCorreoElectronico { get; set; } = null!;
 
-        //public DateTime? dteFechaRegistro { get; set; }
-
         [Timestamp]
         public byte[] RowVersion { get; set; } = null!;
     }

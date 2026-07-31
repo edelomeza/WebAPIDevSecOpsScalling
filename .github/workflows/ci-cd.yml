@@ -191,6 +191,9 @@ jobs:
           image: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
           exit-code: '1'
           exit-level: HIGH
+          format: json
+          output: dockle-report.json
+          accept-key: ASPNETCORE_URLS,ASPNETCORE_ENVIRONMENT,ASPNET_VERSION,DOTNET_VERSION,APP_UID,--uid,--gid,org.opencontainers.image.version
 
       - name: Upload Dockle Report
         if: always()
@@ -235,7 +238,7 @@ jobs:
             /o:"${{ vars.SONAR_ORG }}" \
             /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
             /d:sonar.host.url="https://sonarcloud.io" \
-            /d:sonar.projectName="WebAPIDevSecOps" \
+            /n:WebAPIDevSecOps \
             /d:sonar.cs.opencover.reportsPaths="**/*.opencover.xml" \
             /d:sonar.exclusions="**/Migrations/**,**/Models/**,**/Dto/**,**/Program.cs" \
             /d:sonar.coverage.exclusions="**/Migrations/**,**/Models/**,**/Dto/**,**/Program.cs"

@@ -147,7 +147,7 @@ if (!useInMemory)
         tags: new[] { "redis", "cache" });
 
     healthChecks.AddSqlServer(
-        connectionString: builder.Configuration.GetConnectionString("DefaultConnection"),
+        connectionString: builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("DefaultConnection no configurada"),
         healthQuery: "SELECT 1;",
         name: "sql-server",
         tags: new[] { "db", "sqlserver" });

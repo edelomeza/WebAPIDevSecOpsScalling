@@ -105,3 +105,9 @@ indent_style = space
 indent_size = 4
 insert_final_newline = true
 charset = utf-8-bom
+
+[**/Controllers/*.cs]
+dotnet_diagnostic.CA1515.severity = none
+
+[**/Consumers/*.cs]
+dotnet_diagnostic.CA1515.severity = none

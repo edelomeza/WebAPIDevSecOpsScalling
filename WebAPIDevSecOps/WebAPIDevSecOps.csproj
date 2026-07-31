@@ -54,6 +54,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Remove="appsettings.Example.json" />
+    <None Include="appsettings.Example.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Context\" />
     <Folder Include="Dto\" />
     <Folder Include="Interfaces\" />

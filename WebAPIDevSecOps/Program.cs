@@ -52,15 +52,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog();
 
+var enableConsoleExport = builder.Configuration.GetValue<bool>("Observability:ConsoleExport");
 builder.Services.AddOpenTelemetry()
-    .WithMetrics(metrics => metrics
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter())
-    .WithTracing(tracing => tracing
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddConsoleExporter());
+    .WithMetrics(metrics =>
+    {
+        metrics.AddAspNetCoreInstrumentation();
+        metrics.AddHttpClientInstrumentation();
+        if (enableConsoleExport)
+            metrics.AddConsoleExporter();
+    })
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation();
+        tracing.AddHttpClientInstrumentation();
+        if (enableConsoleExport)
+            tracing.AddConsoleExporter();
+    });
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
@@ -246,6 +253,28 @@ builder.Services.AddRateLimiter(options =>
         opt.QueueLimit = 0;
     });
 
+    options.AddSlidingWindowLimiter("Login2faVerifyPolicy", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(5);
+        opt.PermitLimit = 10;
+        opt.SegmentsPerWindow = 5;
+        opt.QueueLimit = 0;
+    });
+
+    options.AddSlidingWindowLimiter("AdminPolicy", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.PermitLimit = 200;
+        opt.SegmentsPerWindow = 4;
+        opt.QueueLimit = 0;
+    });
+
+    options.AddConcurrencyLimiter("ConcurrentWritesPolicy", opt =>
+    {
+        opt.PermitLimit = 10;
+        opt.QueueLimit = 0;
+    });
+
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
@@ -298,6 +327,13 @@ builder.Services.AddResponseCaching();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUserAccessor, UserAccessor>();
 
+builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HstsOptions>(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = true;
+});
+
 builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Configuration.GetSection("PasswordHashing"));
 builder.Services.Configure<ResilienceOptions>(builder.Configuration.GetSection("Resilience"));
@@ -318,6 +354,8 @@ builder.Services.AddScoped<IVentasPedidoService, VentasPedidoService>();
 builder.Services.AddScoped<IPagoService, PagoService>();
 builder.Services.AddScoped<IFacturaService, FacturaService>();
 builder.Services.AddScoped<ICompensationService, CompensationService>();
+builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+builder.Services.AddScoped<ILogin2faService, Login2faService>();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -372,6 +410,31 @@ builder.Services.AddOpenApi(options =>
 
 var app = builder.Build();
 
+var integritySection = builder.Configuration.GetSection("AssemblyIntegrity");
+var expectedHash = integritySection["ExpectedHash"];
+if (!string.IsNullOrEmpty(expectedHash))
+{
+    var assemblyPath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+    if (assemblyPath != null && File.Exists(assemblyPath))
+    {
+        using var stream = File.OpenRead(assemblyPath);
+        var actualHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+        if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            Log.Warning("Assembly integrity check FAILED for {Assembly}. Expected: {Expected}, Actual: {Actual}",
+                Path.GetFileName(assemblyPath), expectedHash, actualHash);
+        }
+        else
+        {
+            Log.Information("Assembly integrity check PASSED for {Assembly}", Path.GetFileName(assemblyPath));
+        }
+    }
+}
+else if (!builder.Environment.IsDevelopment())
+{
+    Log.Warning("Assembly integrity check not configured. Set AssemblyIntegrity:ExpectedHash in appsettings.json");
+}
+
 if (!useInMemory)
 {
     try
@@ -412,6 +475,7 @@ app.UseCors("SecurePolicy");
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
+app.UseMiddleware<WebAPIDevSecOps.Middleware.CorrelationIdMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.RequestTimeoutMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.AuditLoggingMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.ExceptionHandlingMiddleware>();
@@ -447,84 +511,14 @@ app.Use(async (context, next) =>
         }
     }
 
-    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-
-    context.Response.Headers.Append("X-Frame-Options", "DENY");
-
-    context.Response.Headers.Append("Referrer-Policy", "no-referrer");
-
-    context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
-
-    context.Response.Headers.Append("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-
-    context.Response.Headers.Append("Permissions-Policy", "geolocation=()");
-
-    if (app.Environment.IsDevelopment())
-    {
-        var scriptNonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        context.Items["ScriptNonce"] = scriptNonce;
-
-        context.Response.Headers.Append("Content-Security-Policy",
-            $"default-src 'self'; " +
-            $"script-src 'self' 'nonce-{scriptNonce}'; " +
-            $"style-src 'self' 'unsafe-inline'; " +
-            $"img-src 'self' data:; " +
-            $"font-src 'self' data:; " +
-            $"connect-src 'self' https://localhost:7227 http://localhost:5196;");
-    }
-    else
-    {
-        context.Response.Headers.Append("Content-Security-Policy",
-            "default-src 'none'; frame-ancestors 'none';");
-    }
-
     await next();
 });
 
+app.UseMiddleware<WebAPIDevSecOps.Middleware.SecurityHeadersMiddleware>();
+app.UseMiddleware<WebAPIDevSecOps.Middleware.CspNonceMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
-    app.Use(async (context, next) =>
-    {
-        var nonce = context.Items["ScriptNonce"]?.ToString();
-        if (string.IsNullOrEmpty(nonce))
-        {
-            await next();
-            return;
-        }
-
-        var path = context.Request.Path.Value;
-        if (!string.Equals(path, "/scalar", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(path, "/scalar/", StringComparison.OrdinalIgnoreCase))
-        {
-            await next();
-            return;
-        }
-
-        var originalBody = context.Response.Body;
-        using var memStream = new MemoryStream();
-        context.Response.Body = memStream;
-
-        await next();
-
-        if (context.Response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            memStream.Seek(0, SeekOrigin.Begin);
-            var html = await new StreamReader(memStream).ReadToEndAsync();
-            html = Regex.Replace(html, @"<script(?![^>]*nonce)([^>]*)>",
-                $"<script$1 nonce=\"{nonce}\">");
-            html = Regex.Replace(html, @"<style(?![^>]*nonce)([^>]*)>",
-                $"<style$1 nonce=\"{nonce}\">");
-            var bytes = Encoding.UTF8.GetBytes(html);
-            context.Response.ContentLength = bytes.Length;
-            await originalBody.WriteAsync(bytes);
-        }
-        else
-        {
-            memStream.Seek(0, SeekOrigin.Begin);
-            await memStream.CopyToAsync(originalBody);
-        }
-    });
-
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {

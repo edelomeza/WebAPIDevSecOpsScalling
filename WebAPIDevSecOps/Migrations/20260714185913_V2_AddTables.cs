@@ -62,6 +62,15 @@ namespace WebAPIDevSecOps.Migrations
                         [strDescripcion] nvarchar(200) NULL,
                         CONSTRAINT [PK_VenCatEstado] PRIMARY KEY ([id])
                     );
+
+                    INSERT INTO [VenCatEstado] ([strValor], [strDescripcion]) VALUES
+                        ('PENDIENTE', 'Pedido pendiente de procesar'),
+                        ('EN_PROCESO', 'Pedido en proceso'),
+                        ('COMPLETADO', 'Pedido completado exitosamente'),
+                        ('CANCELADO', 'Pedido cancelado'),
+                        ('REEMBOLSADO', 'Pedido reembolsado'),
+                        ('ENVIADO', 'Pedido enviado al cliente'),
+                        ('ENTREGADO', 'Pedido entregado al cliente');
                 END");
 
             migrationBuilder.Sql(@"
@@ -100,15 +109,15 @@ namespace WebAPIDevSecOps.Migrations
                         CONSTRAINT [FK_VenVenta_CliCliente_idCliCliente]
                             FOREIGN KEY ([idCliCliente])
                             REFERENCES [CliCliente]([id])
-                            ON DELETE RESTRICT,
+                            ON DELETE NO ACTION,
                         CONSTRAINT [FK_VenVenta_SegUsuario_idSegUsuario]
                             FOREIGN KEY ([idSegUsuario])
                             REFERENCES [SegUsuario]([id])
-                            ON DELETE RESTRICT,
+                            ON DELETE NO ACTION,
                         CONSTRAINT [FK_VenVenta_VenCatEstado_idVenCatEstado]
                             FOREIGN KEY ([idVenCatEstado])
                             REFERENCES [VenCatEstado]([id])
-                            ON DELETE RESTRICT
+                            ON DELETE NO ACTION
                     );
                     CREATE INDEX [IX_VenVenta_idCliCliente] ON [VenVenta] ([idCliCliente]);
                     CREATE INDEX [IX_VenVenta_idSegUsuario] ON [VenVenta] ([idSegUsuario]);
@@ -131,11 +140,11 @@ namespace WebAPIDevSecOps.Migrations
                         CONSTRAINT [FK_VenVentaDetalle_ProProducto_idProProducto]
                             FOREIGN KEY ([idProProducto])
                             REFERENCES [ProProducto]([id])
-                            ON DELETE RESTRICT,
+                            ON DELETE NO ACTION,
                         CONSTRAINT [FK_VenVentaDetalle_VenVenta_idVenVenta]
                             FOREIGN KEY ([idVenVenta])
                             REFERENCES [VenVenta]([id])
-                            ON DELETE RESTRICT
+                            ON DELETE NO ACTION
                     );
                     CREATE INDEX [IX_VenVentaDetalle_idProProducto] ON [VenVentaDetalle] ([idProProducto]);
                     CREATE INDEX [IX_VenVentaDetalle_idVenVenta] ON [VenVentaDetalle] ([idVenVenta]);

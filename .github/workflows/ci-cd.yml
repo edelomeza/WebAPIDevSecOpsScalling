@@ -56,7 +56,7 @@ jobs:
         run: dotnet test UnitTest/UnitTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=unit-test-results.trx"
 
       - name: Run Integration Tests
-        run: dotnet test IntegrationTest/IntegrationTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=integration-test-results.trx"
+        run: dotnet test IntegrationTest/IntegrationTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=integration-test-results.trx" --blame-crash --blame-hang-timeout 10m
 
       - name: Run Security Tests
         run: dotnet test SecurityTest/SecurityTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=security-test-results.trx"
@@ -86,7 +86,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: "**/*.trx"
+          path: |
+            **/*.trx
+            **/*.dmp
+            **/Sequence_*.xml
 
   docker-build:
     name: Docker Build
@@ -169,6 +172,33 @@ jobs:
           name: trivy-report
           path: trivy-results.sarif
 
+  dockle-scan:
+    name: Dockle Container Lint
+    runs-on: ubuntu-latest
+    needs: docker-build
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Scan image with Dockle
+        uses: goodwithtech/dockle-action@v1
+        with:
+          image: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+          exit-code: '1'
+          exit-level: HIGH
+
+      - name: Upload Dockle Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dockle-report
+          path: dockle-report.json
+
   sonarcloud:
     name: SonarCloud SAST
     runs-on: ubuntu-latest
@@ -241,6 +271,44 @@ jobs:
 
       - name: Check coverage threshold (>= 60%)
         run: python3 scripts/check_coverage.py
+
+  database-test:
+    name: Database Test (SQL Server)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Run Database Tests (Testcontainers SQL Server)
+        run: dotnet test DatabaseTest/DatabaseTest.csproj -c Release --no-build --verbosity normal --logger "trx;LogFileName=database-test-results.trx"
+
+      - name: Cleanup Docker containers on failure
+        if: failure()
+        run: docker ps -a --filter "name=testcontainers" -q | xargs -r docker rm -f || true
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: database-test-results
+          path: "**/*database-test-results*"
 
   semgrep:
     name: Semgrep SAST
@@ -494,10 +562,90 @@ jobs:
             zap-report.html
             zap-report.json
 
+  zap-pr:
+    name: DAST (OWASP ZAP) - PR
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 30
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: webapidevsecops-pr:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Cleanup previous container
+        run: docker rm -f webapi-pr 2>/dev/null || true
+
+      - name: Run API container
+        run: |
+          docker run -d --rm -p 8080:8080 \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e UseInMemoryDatabase=true \
+            -e ConnectionStrings__DefaultConnection="unused" \
+            -e Jwt__Key="CI_Test_Key_Minimum_32_Bytes_Required_For_JWT" \
+            -e Jwt__Issuer="https://localhost:7000" \
+            -e Jwt__Audience="https://localhost:7000" \
+            --name webapi-pr \
+            webapidevsecops-pr:${{ github.sha }}
+
+      - name: Wait for API to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health/ready 2>/dev/null; then
+              echo "API healthy on attempt $i"
+              break
+            fi
+            echo "Attempt $i: API not ready"
+            sleep 2
+          done
+          sleep 5
+          FINAL=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/ready || echo "000")
+          if [ "$FINAL" != "200" ]; then
+            echo "ERROR: API failed to become healthy after 30 attempts (HTTP $FINAL)"
+            docker logs webapi-pr 2>&1 || true
+            exit 1
+          fi
+
+      - name: ZAP API Scan
+        continue-on-error: true
+        run: |
+          docker run --rm --network host \
+            -v ${{ github.workspace }}:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py \
+              -t http://localhost:8080/openapi/v1.json \
+              -f openapi \
+              -r zap-pr-report.html \
+              -J zap-pr-report.json
+
+      - name: Upload ZAP PR Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zap-pr-report
+          path: |
+            zap-pr-report.html
+            zap-pr-report.json
+
   pr-quality-gate:
     name: PR Quality Gate
     runs-on: ubuntu-latest
-    needs: [build-and-test, semgrep]
+    needs: [build-and-test, semgrep, zap-pr]
     if: github.event_name == 'pull_request'
     timeout-minutes: 5
 
@@ -507,10 +655,11 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const required = ['build-and-test', 'semgrep'];
+            const required = ['build-and-test', 'semgrep', 'zap-pr'];
             const conclusions = {
               'build-and-test': '${{ needs.build-and-test.result }}',
-              'semgrep': '${{ needs.semgrep.result }}'
+              'semgrep': '${{ needs.semgrep.result }}',
+              'zap-pr': '${{ needs.zap-pr.result }}'
             };
 
             let allPass = true;

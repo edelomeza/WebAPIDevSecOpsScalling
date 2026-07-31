@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="DatabaseTest/DatabaseTest.csproj" />
   <Project Path="IntegrationTest/IntegrationTest.csproj" />
   <Project Path="SecurityTest/SecurityTest.csproj" />
   <Project Path="UnitTest/UnitTest.csproj" />

@@ -55,7 +55,12 @@ namespace WebAPIDevSecOps.Controllers
             try
             {
                 var result = await _loginService.LoginAsync(request, ct);
-                return Ok(new { token = result.Token });
+                return Ok(new
+                {
+                    token = result.Token,
+                    refreshToken = result.RefreshToken,
+                    expiresAt = result.ExpiresAt
+                });
             }
             catch (UnauthorizedAccessException ex)
             {

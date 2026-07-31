@@ -22,6 +22,7 @@ namespace WebAPIDevSecOps.Services
         private readonly ILogger<LoginService> _logger;
         private readonly IDistributedCache _cache;
         private readonly IMemoryCache _memoryCache;
+        private readonly IRefreshTokenService _refreshTokenService;
         private static bool _redisHealthy = true;
 
         private const string FakeHash = "$argon2id$v=19$m=65536,t=3,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
@@ -29,7 +30,7 @@ namespace WebAPIDevSecOps.Services
         private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(30);
 
-        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IDistributedCache cache, IMemoryCache memoryCache)
+        public LoginService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<LoginService> logger, IDistributedCache cache, IMemoryCache memoryCache, IRefreshTokenService refreshTokenService)
         {
             _context = context;
             _configuration = configuration;
@@ -38,6 +39,7 @@ namespace WebAPIDevSecOps.Services
             _logger = logger;
             _cache = cache;
             _memoryCache = memoryCache;
+            _refreshTokenService = refreshTokenService;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken ct)
@@ -107,8 +109,14 @@ namespace WebAPIDevSecOps.Services
             }
 
             var token = GenerateJwtToken(usuario.strNombre);
+            var (refreshToken, expiresAt) = await _refreshTokenService.GenerateTokenAsync(usuario.id, ct);
 
-            return new LoginResponse { Token = token };
+            return new LoginResponse
+            {
+                Token = token,
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt
+            };
         }
 
         private async Task RecordFailedAttemptAsync(string username, CancellationToken ct)

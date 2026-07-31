@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
@@ -10,6 +11,7 @@ namespace WebAPIDevSecOps.Controllers
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
+    [EnableRateLimiting("AdminPolicy")]
     public class EmpleadoController : ControllerBase
     {
         private readonly IEmpleadoService _empleadoService;

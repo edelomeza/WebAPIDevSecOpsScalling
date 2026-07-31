@@ -143,5 +143,6 @@ namespace WebAPIDevSecOps.Context
         public DbSet<VenPedidoDetalle> VenPedidoDetalle { get; set; } = default!;
         public DbSet<VenPedidoPago> VenPedidoPago { get; set; } = default!;
         public DbSet<VenPedidoFactura> VenPedidoFactura { get; set; } = default!;
+        public DbSet<SegRefreshToken> SegRefreshToken { get; set; } = default!;
     }
 }

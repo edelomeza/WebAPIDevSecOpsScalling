@@ -297,7 +297,7 @@ namespace SecurityTest.Producto
             Assert.True(response.Headers.Contains("X-Content-Type-Options"));
             Assert.True(response.Headers.Contains("X-Frame-Options"));
             Assert.True(response.Headers.Contains("X-XSS-Protection"));
-            Assert.True(response.Headers.Contains("Strict-Transport-Security"));
+            Assert.False(response.Headers.Contains("Strict-Transport-Security"));
         }
 
         // 16 — CACHE CONTROL

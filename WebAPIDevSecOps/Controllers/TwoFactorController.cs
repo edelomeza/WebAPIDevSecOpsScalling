@@ -46,6 +46,11 @@ namespace WebAPIDevSecOps.Controllers
                 return Unauthorized(new { mensaje = "Usuario no encontrado." });
             }
 
+            if (usuario.bln2FAHabilitado)
+            {
+                return BadRequest(new { mensaje = "El 2FA ya está habilitado para este usuario." });
+            }
+
             var secretKey = KeyGeneration.GenerateRandomKey(20);
             var base32Secret = Base32Encoding.ToString(secretKey);
 

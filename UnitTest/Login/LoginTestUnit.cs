@@ -27,6 +27,7 @@ namespace UnitTest.Login
         private readonly Mock<IValidator<LoginRequest>> _validatorMock;
         private readonly DbResilienceService _dbResilience;
         private readonly Mock<IDistributedCache> _cacheMock;
+        private readonly Mock<IRefreshTokenService> _refreshTokenMock;
 
         private const string FakeArgon2Hash = "$argon2id$v=19$m=16384,t=2,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
 
@@ -40,6 +41,9 @@ namespace UnitTest.Login
                 .ReturnsAsync(new ValidationResult());
             _dbResilience = CreateDbResilience();
             _cacheMock = new Mock<IDistributedCache>();
+            _refreshTokenMock = new Mock<IRefreshTokenService>();
+            _refreshTokenMock.Setup(s => s.GenerateTokenAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(("refresh-token-test", DateTime.UtcNow.AddDays(7)));
         }
 
         private static DbResilienceService CreateDbResilience()
@@ -86,7 +90,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync("lockout:admin", It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>(), _refreshTokenMock.Object), _validatorMock.Object);
 
             var request = new LoginRequest("admin", password);
 
@@ -95,6 +99,46 @@ namespace UnitTest.Login
 
             // Assert
             result.Should().BeOfType<OkObjectResult>();
+        }
+
+        //Caso: Login exitoso emite refresh token
+        [Fact]
+        public async Task Login_ReturnsRefreshToken_WhenCredentialsAreValid()
+        {
+            var context = DbContextMock.GetDbContext();
+
+            var password = "12345678";
+            var hash = BCrypt.Net.BCrypt.HashPassword(password);
+
+            context.SegUsuario.Add(new SegUsuario
+            {
+                strNombre = "admin",
+                strCorreoElectronico = "admin@test.com",
+                strPWD = hash,
+                RowVersion = new byte[] { 1, 0, 0, 0 }
+            });
+            await context.SaveChangesAsync();
+
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string> {
+                    {"Jwt:Key", "z9WkJ4l2m9VQX1x8bYl+q3hR0Fz9uT7e5K2pL8sD4fA="},
+                    {"Jwt:Issuer", "test"},
+                    {"Jwt:Audience", "test"}
+                }).Build();
+
+            _hasherMock.Setup(h => h.VerifyPassword(password, It.IsAny<string>())).Returns(true);
+            _hasherMock.Setup(h => h.NeedsRehash(It.IsAny<string>())).Returns(false);
+
+            _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((byte[]?)null);
+
+            var service = new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>(), _refreshTokenMock.Object);
+
+            var response = await service.LoginAsync(new LoginRequest("admin", password), CancellationToken.None);
+
+            response.Token.Should().NotBeNullOrEmpty();
+            response.RefreshToken.Should().NotBeNullOrEmpty();
+            response.ExpiresAt.Should().BeAfter(DateTime.UtcNow);
         }
 
         //Caso: Usuario no existe (anti-enumeration attack)
@@ -115,7 +159,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, configuration, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>(), _refreshTokenMock.Object), _validatorMock.Object);
 
             var result = await controller.Login(
                 new LoginRequest("fake", "12345678"),
@@ -154,7 +198,7 @@ namespace UnitTest.Login
             _cacheMock.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((byte[]?)null);
 
-            var controller = new LoginController(new LoginService(context, config, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>()), _validatorMock.Object);
+            var controller = new LoginController(new LoginService(context, config, _hasherMock.Object, _dbResilience, Mock.Of<ILogger<LoginService>>(), _cacheMock.Object, Mock.Of<IMemoryCache>(), _refreshTokenMock.Object), _validatorMock.Object);
 
             var result = await controller.Login(
                 new LoginRequest("admin", "wrong"),
@@ -166,3 +210,4 @@ namespace UnitTest.Login
      
     }
 }
+

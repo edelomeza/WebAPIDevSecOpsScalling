@@ -52,6 +52,40 @@ namespace UnitTest.TwoFactor
         }
 
         [Fact]
+        public async Task Setup_AlreadyEnabled_Returns400()
+        {
+            var context = DbContextMock.GetDbContext();
+            var service = new RefreshTokenService(context);
+
+            context.SegUsuario.Add(new SegUsuario
+            {
+                strNombre = "testuser",
+                strCorreoElectronico = "test@test.com",
+                strPWD = "hash",
+                str2FASecreto = "SECRET",
+                bln2FAHabilitado = true,
+                RowVersion = new byte[] { 1, 0, 0, 0 }
+            });
+            await context.SaveChangesAsync();
+
+            var controller = new TwoFactorController(context, service);
+            controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, "testuser")
+                    }, "test"))
+                }
+            };
+
+            var result = await controller.Setup(CancellationToken.None);
+
+            result.Should().BeOfType<BadRequestObjectResult>();
+        }
+
+        [Fact]
         public async Task Setup_WithoutAuth_Returns401()
         {
             var context = DbContextMock.GetDbContext();

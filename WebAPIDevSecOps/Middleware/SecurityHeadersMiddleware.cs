@@ -15,7 +15,6 @@ namespace WebAPIDevSecOps.Middleware
             context.Response.Headers.Append("X-Frame-Options", "DENY");
             context.Response.Headers.Append("Referrer-Policy", "no-referrer");
             context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
-            context.Response.Headers.Append("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
             context.Response.Headers.Append("Permissions-Policy", "geolocation=()");
 
             return _next(context);

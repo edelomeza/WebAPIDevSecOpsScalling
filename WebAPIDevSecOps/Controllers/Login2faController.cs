@@ -45,7 +45,12 @@ namespace WebAPIDevSecOps.Controllers
                     });
                 }
 
-                return Ok(new { token = result.Token });
+                return Ok(new
+                {
+                    token = result.Token,
+                    refreshToken = result.RefreshToken,
+                    expiresAt = result.ExpiresAt
+                });
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -54,6 +59,7 @@ namespace WebAPIDevSecOps.Controllers
         }
 
         [HttpPost("verify")]
+        [EnableRateLimiting("Login2faVerifyPolicy")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -67,7 +73,12 @@ namespace WebAPIDevSecOps.Controllers
             try
             {
                 var result = await _login2faService.Verify2faAsync(request, ct);
-                return Ok(new { token = result.Token });
+                return Ok(new
+                {
+                    token = result.Token,
+                    refreshToken = result.RefreshToken,
+                    expiresAt = result.ExpiresAt
+                });
             }
             catch (UnauthorizedAccessException ex)
             {

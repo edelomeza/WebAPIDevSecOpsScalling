@@ -51,14 +51,14 @@ namespace UnitTest.Middleware
         }
 
         [Fact]
-        public async Task InvokeAsync_SetsStrictTransportSecurity()
+        public async Task InvokeAsync_DoesNotSetStrictTransportSecurity()
         {
             var context = new DefaultHttpContext();
             var middleware = new SecurityHeadersMiddleware(_ => Task.CompletedTask);
 
             await middleware.InvokeAsync(context);
 
-            context.Response.Headers["Strict-Transport-Security"].ToString().Should().Be("max-age=31536000; includeSubDomains; preload");
+            context.Response.Headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
         }
 
         [Fact]
@@ -84,8 +84,8 @@ namespace UnitTest.Middleware
             context.Response.Headers.Should().ContainKey("X-Frame-Options");
             context.Response.Headers.Should().ContainKey("Referrer-Policy");
             context.Response.Headers.Should().ContainKey("X-XSS-Protection");
-            context.Response.Headers.Should().ContainKey("Strict-Transport-Security");
             context.Response.Headers.Should().ContainKey("Permissions-Policy");
+            context.Response.Headers.Should().NotContainKey("Strict-Transport-Security");
         }
 
         [Fact]

@@ -253,6 +253,14 @@ builder.Services.AddRateLimiter(options =>
         opt.QueueLimit = 0;
     });
 
+    options.AddSlidingWindowLimiter("Login2faVerifyPolicy", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(5);
+        opt.PermitLimit = 10;
+        opt.SegmentsPerWindow = 5;
+        opt.QueueLimit = 0;
+    });
+
     options.AddSlidingWindowLimiter("AdminPolicy", opt =>
     {
         opt.Window = TimeSpan.FromMinutes(1);
@@ -318,6 +326,13 @@ else
 builder.Services.AddResponseCaching();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUserAccessor, UserAccessor>();
+
+builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HstsOptions>(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = true;
+});
 
 builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Configuration.GetSection("PasswordHashing"));

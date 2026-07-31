@@ -79,6 +79,20 @@ namespace IntegrationTest.Login2fa
                 });
             }
 
+            if (!db.SegUsuario.Any(u => u.strNombre == "testuser_2fa_lockout"))
+            {
+                var secret = Base32Encoding.ToString(KeyGeneration.GenerateRandomKey(20));
+                db.SegUsuario.Add(new SegUsuario
+                {
+                    strNombre = "testuser_2fa_lockout",
+                    strCorreoElectronico = "tfalock@test.com",
+                    strPWD = passwordHash,
+                    str2FASecreto = secret,
+                    bln2FAHabilitado = true,
+                    RowVersion = new byte[] { 1, 0, 0, 0 }
+                });
+            }
+
             await db.SaveChangesAsync();
         }
 
@@ -135,6 +149,31 @@ namespace IntegrationTest.Login2fa
                 new Login2faRequest("nonexistent", "SomePass1$"));
 
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public async Task Verify2fa_FiveWrongCodes_TriggersLockout()
+        {
+            var loginResponse = await _client.PostAsJsonAsync("/api/v1/Login2fa/login",
+                new Login2faRequest("testuser_2fa_lockout", "Test1234$"));
+            loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var loginContent = await loginResponse.Content.ReadFromJsonAsync<Dictionary<string, object>>();
+            var tempToken = loginContent!["tempToken"].ToString()!;
+
+            for (int i = 0; i < 5; i++)
+            {
+                var verifyResponse = await _client.PostAsJsonAsync("/api/v1/Login2fa/verify",
+                    new Login2faVerifyRequest(tempToken, "000000"));
+                verifyResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            }
+
+            var lockoutResponse = await _client.PostAsJsonAsync("/api/v1/Login2fa/verify",
+                new Login2faVerifyRequest(tempToken, "111111"));
+            lockoutResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            var lockoutLogin = await _client.PostAsJsonAsync("/api/v1/Login2fa/login",
+                new Login2faRequest("testuser_2fa_lockout", "Test1234$"));
+            lockoutLogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
 
         [Fact]

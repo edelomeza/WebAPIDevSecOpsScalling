@@ -52,11 +52,11 @@ public class SecurityHeadersIntegrationTests : IClassFixture<WebApplicationFacto
     }
 
     [Fact]
-    public async Task HealthEndpoint_ContainsStrictTransportSecurity()
+    public async Task HealthEndpoint_DoesNotContainStrictTransportSecurityInDevelopment()
     {
         var response = await _client.GetAsync("/health");
-        response.Headers.GetValues("Strict-Transport-Security").First()
-            .Should().Be("max-age=31536000; includeSubDomains; preload");
+
+        response.Headers.Contains("Strict-Transport-Security").Should().BeFalse();
     }
 
     [Fact]

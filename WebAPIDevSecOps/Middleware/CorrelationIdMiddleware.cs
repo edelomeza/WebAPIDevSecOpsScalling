@@ -1,11 +1,14 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace WebAPIDevSecOps.Middleware
 {
-    public class CorrelationIdMiddleware
+    public partial class CorrelationIdMiddleware
     {
         private readonly RequestDelegate _next;
         private readonly ILogger<CorrelationIdMiddleware> _logger;
+
+        private const int MaxCorrelationIdLength = 100;
 
         public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
         {
@@ -17,8 +20,14 @@ namespace WebAPIDevSecOps.Middleware
         {
             var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault();
 
-            if (string.IsNullOrWhiteSpace(correlationId))
+            if (string.IsNullOrWhiteSpace(correlationId) || !IsValidCorrelationId(correlationId))
+            {
+                if (!string.IsNullOrWhiteSpace(correlationId))
+                {
+                    _logger.LogWarning("X-Correlation-Id descartado por formato inválido: {CorrelationId}", correlationId);
+                }
                 correlationId = Guid.NewGuid().ToString();
+            }
 
             context.Response.Headers["X-Correlation-Id"] = correlationId;
 
@@ -31,5 +40,14 @@ namespace WebAPIDevSecOps.Middleware
                 await _next(context);
             }
         }
+
+        private static bool IsValidCorrelationId(string correlationId)
+        {
+            return correlationId.Length <= MaxCorrelationIdLength &&
+                   ValidCorrelationIdRegex().IsMatch(correlationId);
+        }
+
+        [GeneratedRegex(@"^[A-Za-z0-9\-_.]+$")]
+        private static partial Regex ValidCorrelationIdRegex();
     }
 }

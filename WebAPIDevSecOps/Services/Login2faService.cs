@@ -22,6 +22,7 @@ namespace WebAPIDevSecOps.Services
         private readonly ILogger<Login2faService> _logger;
         private readonly IDistributedCache _cache;
         private readonly IMemoryCache _memoryCache;
+        private readonly IRefreshTokenService _refreshTokenService;
         private static bool _redisHealthy = true;
 
         private const string FakeHash = "$argon2id$v=19$m=65536,t=3,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
@@ -29,7 +30,7 @@ namespace WebAPIDevSecOps.Services
         private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(30);
 
-        public Login2faService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<Login2faService> logger, IDistributedCache cache, IMemoryCache memoryCache)
+        public Login2faService(AppDbContext context, IConfiguration configuration, IPasswordHasherService passwordHasher, DbResilienceService dbResilience, ILogger<Login2faService> logger, IDistributedCache cache, IMemoryCache memoryCache, IRefreshTokenService refreshTokenService)
         {
             _context = context;
             _configuration = configuration;
@@ -38,6 +39,7 @@ namespace WebAPIDevSecOps.Services
             _logger = logger;
             _cache = cache;
             _memoryCache = memoryCache;
+            _refreshTokenService = refreshTokenService;
         }
 
         public async Task<Login2faResponse> Login2faAsync(Login2faRequest request, CancellationToken ct)
@@ -46,21 +48,7 @@ namespace WebAPIDevSecOps.Services
 
             var username = request.User.Trim();
 
-            string? lockoutValue;
-            try
-            {
-                lockoutValue = await _cache.GetStringAsync($"lockout:{username}", ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Redis unavailable for lockout check, falling back to memory cache");
-                _redisHealthy = false;
-                lockoutValue = _memoryCache.Get<string>($"lockout:{username}");
-            }
-            if (lockoutValue is not null)
-            {
-                throw new UnauthorizedAccessException("Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo más tarde.");
-            }
+            await CheckLockoutAsync(username, ct);
 
             var usuario = await _context.SegUsuario
                 .Where(u => u.strNombre == username)
@@ -83,18 +71,7 @@ namespace WebAPIDevSecOps.Services
                 throw new UnauthorizedAccessException("Credenciales inválidas.");
             }
 
-            try
-            {
-                await _cache.RemoveAsync($"lockout:{username}", ct);
-                await _cache.RemoveAsync($"attempts:{username}", ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Redis unavailable for cache cleanup, falling back to memory cache");
-                _redisHealthy = false;
-                _memoryCache.Remove($"lockout:{username}");
-                _memoryCache.Remove($"attempts:{username}");
-            }
+            await ClearAttemptsAsync(username, ct);
 
             if (await Task.Run(() => _passwordHasher.NeedsRehash(usuario.strPWD), ct))
             {
@@ -117,9 +94,12 @@ namespace WebAPIDevSecOps.Services
             }
 
             var token = GenerateJwtToken(usuario.strNombre);
+            var (refreshToken, expiresAt) = await _refreshTokenService.GenerateTokenAsync(usuario.id, ct);
             return new Login2faResponse
             {
                 Token = token,
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt,
                 Requires2fa = false
             };
         }
@@ -141,6 +121,8 @@ namespace WebAPIDevSecOps.Services
             {
                 throw new UnauthorizedAccessException("Token temporal inválido.");
             }
+
+            await CheckLockoutAsync(username, ct);
 
             var usuario = await _context.SegUsuario
                 .Where(u => u.strNombre == username)
@@ -173,14 +155,55 @@ namespace WebAPIDevSecOps.Services
 
             if (!isValid)
             {
+                await RecordFailedAttemptAsync(username, ct);
                 throw new UnauthorizedAccessException("Código TOTP inválido. Verifique el código e intente de nuevo.");
             }
 
+            await ClearAttemptsAsync(username, ct);
+
             var token = GenerateJwtToken(usuario.strNombre);
+            var (refreshToken, expiresAt) = await _refreshTokenService.GenerateTokenAsync(usuario.id, ct);
             return new Login2faVerifyResponse
             {
-                Token = token
+                Token = token,
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt
             };
+        }
+
+        private async Task CheckLockoutAsync(string username, CancellationToken ct)
+        {
+            string? lockoutValue;
+            try
+            {
+                lockoutValue = await _cache.GetStringAsync($"lockout:{username}", ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis unavailable for lockout check, falling back to memory cache");
+                _redisHealthy = false;
+                lockoutValue = _memoryCache.Get<string>($"lockout:{username}");
+            }
+            if (lockoutValue is not null)
+            {
+                throw new UnauthorizedAccessException("Cuenta bloqueada temporalmente por múltiples intentos fallidos. Intente de nuevo más tarde.");
+            }
+        }
+
+        private async Task ClearAttemptsAsync(string username, CancellationToken ct)
+        {
+            try
+            {
+                await _cache.RemoveAsync($"lockout:{username}", ct);
+                await _cache.RemoveAsync($"attempts:{username}", ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis unavailable for cache cleanup, falling back to memory cache");
+                _redisHealthy = false;
+                _memoryCache.Remove($"lockout:{username}");
+                _memoryCache.Remove($"attempts:{username}");
+            }
         }
 
         private async Task RecordFailedAttemptAsync(string username, CancellationToken ct)

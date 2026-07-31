@@ -139,7 +139,20 @@ Esto asegura que las migraciones EF Core siempre sean válidas antes de mergear 
 - Mutante "sobreviviente" → los tests NO detectaron el cambio (hueco en la cobertura de comportamiento, aunque la cobertura de línea sea 100%).
 3. Por qué importa: la cobertura clásica (46% actual) solo mide qué líneas se ejecutan; el mutation score mide si los tests detectan cambios de comportamiento. Es el gate real de calidad de tests.
 4. Qué deja listo: sin este proyecto, los pasos 4.2 (config) y 4.4 (línea base) no pueden correr — por eso es la dependencia base del bloque. Verificado: build 0 errores, `dotnet tool restore` de dotnet-stryker 4.16.0 OK. | `MutationTest/MutationTest.csproj` (nuevo), `MutationTest/.config/dotnet-tools.json` (nuevo), `WebAPIDevSecOps.slnx` | 1.1 |
-| 4.2 | ⬜ | `[MQA] F2.2` | Configurar stryker-config.json | Thresholds high=80, low=70, break=60. Excluir Migrations/, Models/, Dto/, Program.cs | `MutationTest/stryker-config.json` (nuevo) | 4.1 |
+| 4.2 | ✅ | `[MQA] F2.2` | Configurar stryker-config.json | **Hecho.** Su función es definir las reglas del juego para que Stryker sepa qué mutar, con qué criterios decidir y cuándo parar. Sin esta configuración, Stryker usaría defaults que no sirven para este proyecto.
+En concreto configura:
+1. Thresholds (high=80, low=70, break=60) — el mutation score se compara contra 3 niveles:
+- `< 60` (break) → Stryker falla (exit code ≠ 0), bloquea CI.
+- `60–70` (low) → no falla pero no genera badge de reporte (zona amarilla).
+- `≥ 80` (high) → reporte "verde" de aprobación.
+- Son los mismos niveles que usará el paso 4.3 (job CI) para decidir si el pipeline pasa.
+2. Exclusiones (`Migrations/`, `Models/`, `Dto/`, `Program.cs`) — Stryker no mutará ese código:
+- `Migrations/` — código generado por EF Core; mutarlo es ruido.
+- `Models/` y `Dto/` — POCOs sin lógica; los mutantes no cambian comportamiento.
+- `Program.cs` — bootstrap/infra, no testeable unitariamente.
+- Esto reduce el tiempo de ejecución (Stryker muta todo lo que encuentra; mutar miles de líneas de POCOs tomaría horas y no aporta) y enfoca el score en lo que importa: servicios y controladores.
+3. Apunta al código y tests correctos — el config especifica qué proyecto mutar (`WebAPIDevSecOps`) y con qué suite de tests validar (`UnitTest`/`IntegrationTest`), porque Stryker no sabe solo dónde está la lógica a probar.
+Resumen: 4.2 = el "reglamento" (qué se muta, qué se excluye, qué score aprueba). Es lo que permite que 4.4 (línea base) dé un número comparable y que 4.3 (CI) tenga un gate automático. Verificado: dotnet-stryker 4.16.0 responde y acepta `--config-file`, `--threshold-*`, `--mutate`. | `MutationTest/stryker-config.json` (nuevo) | 4.1 |
 | 4.3 | ⬜ | `[MQA] F2.3` | Job CI mutation-test | Stryker en push a main (no PR), timeout 30min, publica reporte HTML como artifact | `.github/workflows/ci-cd.yml` | 4.2 |
 | 4.4 | ⬜ | `[MQA] F2.4` | Ejecutar Stryker línea base | `dotnet stryker --config-file MutationTest/stryker-config.json`. Reportar mutation score actual | — | 4.3 |
 | 4.5 | ⬜ | `[MQA] F2.5` | Mejorar tests donde mutation score bajo | Identificar mutantes sobrevivientes, agregar tests que los maten. Repetir hasta score ≥70% | Archivos de test varios | 4.4 |
@@ -306,7 +319,7 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ### FASE 4 — Validación Profunda (20 pasos)
 ```
-✅ 4.1  ▢ 4.2  ▢ 4.3  ▢ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
+✅ 4.1  ✅ 4.2  ▢ 4.3  ▢ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
 ▢ 4.9  ▢ 4.10 ▢ 4.11 ▢ 4.12 ▢ 4.13 ▢ 4.14 ▢ 4.15 ▢ 4.16
 ▢ 4.17 ▢ 4.18 ▢ 4.19 ▢ 4.20
 ```
@@ -324,8 +337,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ---
 
-**Total: 97 pasos | ✅ 59% completado (57/97)**
+**Total: 97 pasos | ✅ 60% completado (58/97)**
 
 ```
-Progreso: ██████████████████████████████████████████████████ 59%
+Progreso: ██████████████████████████████████████████████████ 60%
 ```

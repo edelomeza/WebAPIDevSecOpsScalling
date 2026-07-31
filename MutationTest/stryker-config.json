@@ -1,0 +1,25 @@
+{
+  "stryker-config": {
+    "solution": "WebAPIDevSecOps.slnx",
+    "project": "WebAPIDevSecOps/WebAPIDevSecOps.csproj",
+    "test-projects": [
+      "UnitTest/UnitTest.csproj",
+      "IntegrationTest/IntegrationTest.csproj"
+    ],
+    "mutate": [
+      "WebAPIDevSecOps/**",
+      "!WebAPIDevSecOps/Migrations/**",
+      "!WebAPIDevSecOps/Models/**",
+      "!WebAPIDevSecOps/Dto/**",
+      "!WebAPIDevSecOps/Program.cs"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 70,
+      "break": 60
+    },
+    "reporters": ["html", "progress", "json"],
+    "coverage-analysis": "perTest",
+    "verbosity": "info"
+  }
+}

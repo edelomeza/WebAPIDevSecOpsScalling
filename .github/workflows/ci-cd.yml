@@ -235,7 +235,10 @@ jobs:
             /o:"${{ vars.SONAR_ORG }}" \
             /d:sonar.token="${{ secrets.SONAR_TOKEN }}" \
             /d:sonar.host.url="https://sonarcloud.io" \
-            /d:sonar.cs.opencover.reportsPaths="**/*.opencover.xml"
+            /d:sonar.projectName="WebAPIDevSecOps" \
+            /d:sonar.cs.opencover.reportsPaths="**/*.opencover.xml" \
+            /d:sonar.exclusions="**/Migrations/**,**/Models/**,**/Dto/**,**/Program.cs" \
+            /d:sonar.coverage.exclusions="**/Migrations/**,**/Models/**,**/Dto/**,**/Program.cs"
 
       - name: Build for Sonar
         run: dotnet build -c Release

@@ -6,5 +6,7 @@ namespace WebAPIDevSecOps.Interfaces
     {
         Task<PagoResponseDto> ProcesarPagoAsync(Guid pedidoId, string metodoPago, decimal monto);
         Task<bool> ReembolsarPagoAsync(int pagoId);
+        Task<PagoResponseDto?> GetByIdAsync(int id);
+        Task<List<PagoResponseDto>> GetByPedidoIdAsync(Guid pedidoId);
     }
 }

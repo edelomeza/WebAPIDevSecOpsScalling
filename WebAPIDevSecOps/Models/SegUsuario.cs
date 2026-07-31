@@ -20,6 +20,11 @@ namespace WebAPIDevSecOps.Models
 
         public DateTime? dteFechaRegistro { get; set; }
 
+        public bool bln2FAHabilitado { get; set; }
+
+        [StringLength(200)]
+        public string? str2FASecreto { get; set; }
+
         [Timestamp]
         public byte[] RowVersion { get; set; } = new byte[] { 1 };
     }

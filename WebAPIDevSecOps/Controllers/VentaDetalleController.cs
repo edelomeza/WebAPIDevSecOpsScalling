@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using WebAPIDevSecOps.Dto;
@@ -9,6 +10,7 @@ using WebAPIDevSecOps.Interfaces;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [ApiController]
+[EnableRateLimiting("ConcurrentWritesPolicy")]
 public class VentaDetalleController : ControllerBase
 {
     private readonly IVentaDetalleService _ventaDetalleService;

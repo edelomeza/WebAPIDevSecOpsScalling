@@ -59,6 +59,30 @@ namespace UnitTest.Common
                 }
             }
 
+            foreach (var entry in ChangeTracker.Entries<VenPedido>())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Entity.RowVersion ??= new byte[] { 1, 0, 0, 0 };
+                }
+            }
+
+            foreach (var entry in ChangeTracker.Entries<VenPedidoDetalle>())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Entity.RowVersion ??= new byte[] { 1, 0, 0, 0 };
+                }
+            }
+
+            foreach (var entry in ChangeTracker.Entries<SegRefreshToken>())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Entity.RowVersion ??= new byte[] { 1, 0, 0, 0 };
+                }
+            }
+
             return base.SaveChangesAsync(cancellationToken);
         }
     }

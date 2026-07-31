@@ -41,6 +41,10 @@ namespace WebAPIDevSecOps.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("strCreadoPorUsuario")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("strDireccionCliente")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -154,6 +158,10 @@ namespace WebAPIDevSecOps.Migrations
                     b.Property<int>("intNumeroExistencia")
                         .HasColumnType("int");
 
+                    b.Property<string>("strCreadoPorUsuario")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("strDescripcion")
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
@@ -175,6 +183,48 @@ namespace WebAPIDevSecOps.Migrations
                     b.ToTable("ProProducto");
                 });
 
+            modelBuilder.Entity("WebAPIDevSecOps.Models.SegRefreshToken", b =>
+                {
+                    b.Property<int>("id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("id"));
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("dteCreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("dteExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("dteRevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("idSegUsuario")
+                        .HasColumnType("int");
+
+                    b.Property<string>("strReplacedByTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("strTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("id");
+
+                    b.HasIndex("idSegUsuario");
+
+                    b.ToTable("SegRefreshToken");
+                });
+
             modelBuilder.Entity("WebAPIDevSecOps.Models.SegUsuario", b =>
                 {
                     b.Property<int>("id")
@@ -189,8 +239,15 @@ namespace WebAPIDevSecOps.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<bool>("bln2FAHabilitado")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("dteFechaRegistro")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("str2FASecreto")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("strCorreoElectronico")
                         .IsRequired()
@@ -500,6 +557,17 @@ namespace WebAPIDevSecOps.Migrations
                     b.Navigation("EmpCatTipoEmpleado");
                 });
 
+            modelBuilder.Entity("WebAPIDevSecOps.Models.SegRefreshToken", b =>
+                {
+                    b.HasOne("WebAPIDevSecOps.Models.SegUsuario", "SegUsuario")
+                        .WithMany()
+                        .HasForeignKey("idSegUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SegUsuario");
+                });
+
             modelBuilder.Entity("WebAPIDevSecOps.Models.VenPedido", b =>
                 {
                     b.HasOne("WebAPIDevSecOps.Models.CliCliente", "CliCliente")
@@ -520,7 +588,7 @@ namespace WebAPIDevSecOps.Migrations
                         .IsRequired();
 
                     b.HasOne("WebAPIDevSecOps.Models.VenPedido", "VenPedido")
-                        .WithMany()
+                        .WithMany("Detalles")
                         .HasForeignKey("idVenPedido")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -533,7 +601,7 @@ namespace WebAPIDevSecOps.Migrations
             modelBuilder.Entity("WebAPIDevSecOps.Models.VenPedidoFactura", b =>
                 {
                     b.HasOne("WebAPIDevSecOps.Models.VenPedido", "VenPedido")
-                        .WithMany()
+                        .WithMany("Facturas")
                         .HasForeignKey("idVenPedido")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -544,7 +612,7 @@ namespace WebAPIDevSecOps.Migrations
             modelBuilder.Entity("WebAPIDevSecOps.Models.VenPedidoPago", b =>
                 {
                     b.HasOne("WebAPIDevSecOps.Models.VenPedido", "VenPedido")
-                        .WithMany()
+                        .WithMany("Pagos")
                         .HasForeignKey("idVenPedido")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -596,6 +664,15 @@ namespace WebAPIDevSecOps.Migrations
                     b.Navigation("ProProducto");
 
                     b.Navigation("VenVenta");
+                });
+
+            modelBuilder.Entity("WebAPIDevSecOps.Models.VenPedido", b =>
+                {
+                    b.Navigation("Detalles");
+
+                    b.Navigation("Facturas");
+
+                    b.Navigation("Pagos");
                 });
 #pragma warning restore 612, 618
         }

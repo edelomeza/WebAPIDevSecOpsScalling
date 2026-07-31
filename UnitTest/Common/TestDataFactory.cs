@@ -293,5 +293,47 @@ namespace UnitTest.Common
                 RowVersion = rowVersion,
             };
         }
+
+    public static PedidoCreateDto CreatePedidoCreateDto(int idCliCliente, List<int>? idProductos = null)
+    {
+        return new PedidoCreateDto
+        {
+            idCliCliente = idCliCliente,
+            Detalles = (idProductos ?? new List<int> { 1 }).Select(idProProducto =>
+                new PedidoDetalleCreateDto
+                {
+                    idProProducto = idProProducto,
+                    intCantidad = 1,
+                }).ToList(),
+        };
+    }
+
+    public static VenPedido CreatePedido(Guid id, int idCliCliente, string estadoSaga = "Pendiente")
+    {
+        return new VenPedido
+        {
+            id = id,
+            idCliCliente = idCliCliente,
+            dteFechaPedido = DateTime.UtcNow,
+            decTotal = 99.99m,
+            strEstadoSaga = estadoSaga,
+            RowVersion = new byte[] { 1, 0, 0, 0 },
+        };
+    }
+
+    public static List<VenPedido> CreatePedidos(int count, int idCliCliente)
+    {
+        return Enumerable.Range(1, count)
+            .Select(i => new VenPedido
+            {
+                id = Guid.NewGuid(),
+                idCliCliente = idCliCliente,
+                dteFechaPedido = DateTime.UtcNow.AddMinutes(-count + i),
+                decTotal = i * 99.99m,
+                strEstadoSaga = "Pendiente",
+                RowVersion = new byte[] { 1, 0, 0, 0 },
+            })
+            .ToList();
+    }
     }
 }

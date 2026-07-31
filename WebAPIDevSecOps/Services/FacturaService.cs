@@ -116,6 +116,43 @@ namespace WebAPIDevSecOps.Services
             }
         }
 
+        public async Task<FacturaResponseDto?> GetByIdAsync(int id)
+        {
+            return await _context.Set<VenPedidoFactura>()
+                .AsNoTracking()
+                .Where(f => f.id == id)
+                .Select(f => new FacturaResponseDto
+                {
+                    id = f.id,
+                    idVenPedido = f.idVenPedido,
+                    strFolioFactura = f.strFolioFactura,
+                    strRFC = f.strRFC,
+                    decTotal = f.decTotal,
+                    dteFechaEmision = f.dteFechaEmision,
+                    strEstado = f.strEstado,
+                })
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<List<FacturaResponseDto>> GetByPedidoIdAsync(Guid pedidoId)
+        {
+            return await _context.Set<VenPedidoFactura>()
+                .AsNoTracking()
+                .Where(f => f.idVenPedido == pedidoId)
+                .OrderByDescending(f => f.dteFechaEmision)
+                .Select(f => new FacturaResponseDto
+                {
+                    id = f.id,
+                    idVenPedido = f.idVenPedido,
+                    strFolioFactura = f.strFolioFactura,
+                    strRFC = f.strRFC,
+                    decTotal = f.decTotal,
+                    dteFechaEmision = f.dteFechaEmision,
+                    strEstado = f.strEstado,
+                })
+                .ToListAsync();
+        }
+
         public async Task<bool> CancelarFacturaAsync(int facturaId)
         {
             var factura = await _context.Set<VenPedidoFactura>()

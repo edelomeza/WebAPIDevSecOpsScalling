@@ -99,6 +99,43 @@ namespace WebAPIDevSecOps.Services
             };
         }
 
+        public async Task<PagoResponseDto?> GetByIdAsync(int id)
+        {
+            return await _context.Set<VenPedidoPago>()
+                .AsNoTracking()
+                .Where(p => p.id == id)
+                .Select(p => new PagoResponseDto
+                {
+                    id = p.id,
+                    idVenPedido = p.idVenPedido,
+                    decMonto = p.decMonto,
+                    strMetodoPago = p.strMetodoPago,
+                    strIdTransaccion = p.strIdTransaccion,
+                    strEstado = p.strEstado,
+                    dteFechaPago = p.dteFechaPago,
+                })
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<List<PagoResponseDto>> GetByPedidoIdAsync(Guid pedidoId)
+        {
+            return await _context.Set<VenPedidoPago>()
+                .AsNoTracking()
+                .Where(p => p.idVenPedido == pedidoId)
+                .OrderByDescending(p => p.dteFechaPago)
+                .Select(p => new PagoResponseDto
+                {
+                    id = p.id,
+                    idVenPedido = p.idVenPedido,
+                    decMonto = p.decMonto,
+                    strMetodoPago = p.strMetodoPago,
+                    strIdTransaccion = p.strIdTransaccion,
+                    strEstado = p.strEstado,
+                    dteFechaPago = p.dteFechaPago,
+                })
+                .ToListAsync();
+        }
+
         public async Task<bool> ReembolsarPagoAsync(int pagoId)
         {
             var pago = await _context.Set<VenPedidoPago>()

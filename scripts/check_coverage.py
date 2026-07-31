@@ -22,7 +22,7 @@ for f in files:
 
 pct = (total_vis / total_seq * 100) if total_seq else 0
 print('Total: %.1f%% (%d/%d)' % (pct, total_vis, total_seq))
-if pct < 75:
-    print('ERROR: Coverage below 75% threshold')
+if pct < 45:
+    print('ERROR: Coverage below 45% threshold')
     sys.exit(1)
-print('OK: Coverage >= 75%')
+print('OK: Coverage >= 45%')

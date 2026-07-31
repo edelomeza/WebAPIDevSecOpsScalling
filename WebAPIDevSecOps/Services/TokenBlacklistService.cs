@@ -10,7 +10,6 @@ public class TokenBlacklistService : ITokenBlacklistService
     private readonly IDistributedCache _cache;
     private readonly IMemoryCache _memoryCache;
     private readonly ILogger<TokenBlacklistService> _logger;
-    private static bool _redisHealthy = true;
 
     public TokenBlacklistService(IDistributedCache cache, IMemoryCache memoryCache, ILogger<TokenBlacklistService> logger)
     {
@@ -32,7 +31,6 @@ public class TokenBlacklistService : ITokenBlacklistService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for token blacklist, falling back to memory cache");
-            _redisHealthy = false;
             _memoryCache.Set($"blacklist:{jti}", new byte[] { 1 }, expiry);
         }
     }
@@ -47,7 +45,6 @@ public class TokenBlacklistService : ITokenBlacklistService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Redis unavailable for blacklist check, falling back to memory cache");
-            _redisHealthy = false;
             var value = _memoryCache.Get<byte[]>($"blacklist:{jti}");
             return value is not null;
         }

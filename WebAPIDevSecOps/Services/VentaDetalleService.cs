@@ -179,7 +179,7 @@ namespace WebAPIDevSecOps.Services
             if (dto.RowVersion is { Length: > 0 })
                 _context.Entry(detalle).Property("RowVersion").OriginalValue = dto.RowVersion;
 
-            var productoAnterior = detalle.ProProducto;
+            var productoAnterior = detalle.ProProducto!;
 
             if (productoAnterior.id == dto.idProProducto)
             {
@@ -225,7 +225,7 @@ namespace WebAPIDevSecOps.Services
             if (dto.RowVersion is { Length: > 0 })
                 _context.Entry(detalle).Property("RowVersion").OriginalValue = dto.RowVersion;
 
-            detalle.ProProducto.intNumeroExistencia += detalle.intPiezaVenta;
+            detalle.ProProducto!.intNumeroExistencia += detalle.intPiezaVenta;
             _context.Entry(detalle.ProProducto).State = EntityState.Modified;
 
             _context.Set<VenVentaDetalle>().Remove(detalle);

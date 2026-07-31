@@ -23,7 +23,6 @@ namespace WebAPIDevSecOps.Services
         private readonly IDistributedCache _cache;
         private readonly IMemoryCache _memoryCache;
         private readonly IRefreshTokenService _refreshTokenService;
-        private static bool _redisHealthy = true;
 
         private const string FakeHash = "$argon2id$v=19$m=65536,t=3,p=1$KxY6z3Y9eG7EqJtq98hPqEX7nZaFWoOhiu7z8K7Z4Vwaki3P6KyHRxY6z3Y9eG";
         private const int MaxFailedAttempts = 5;
@@ -56,7 +55,6 @@ namespace WebAPIDevSecOps.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Redis unavailable for lockout check, falling back to memory cache");
-                _redisHealthy = false;
                 lockoutValue = _memoryCache.Get<string>($"lockout:{username}");
             }
             if (lockoutValue is not null)
@@ -93,7 +91,6 @@ namespace WebAPIDevSecOps.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Redis unavailable for cache cleanup, falling back to memory cache");
-                _redisHealthy = false;
                 _memoryCache.Remove($"lockout:{username}");
                 _memoryCache.Remove($"attempts:{username}");
             }
@@ -132,7 +129,6 @@ namespace WebAPIDevSecOps.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Redis unavailable for failed attempt check, falling back to memory cache");
-                _redisHealthy = false;
                 currentValue = _memoryCache.Get<string>(attemptsKey);
             }
             if (currentValue is not null && int.TryParse(currentValue, out var currentAttempts))
@@ -153,7 +149,6 @@ namespace WebAPIDevSecOps.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Redis unavailable for lockout set, falling back to memory cache");
-                    _redisHealthy = false;
                     _memoryCache.Set($"lockout:{username}", "1", LockoutDuration);
                     _memoryCache.Remove(attemptsKey);
                 }
@@ -170,7 +165,6 @@ namespace WebAPIDevSecOps.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Redis unavailable for attempt tracking, falling back to memory cache");
-                    _redisHealthy = false;
                     _memoryCache.Set(attemptsKey, attempts.ToString(), AttemptWindow);
                 }
             }

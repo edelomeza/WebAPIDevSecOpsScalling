@@ -6,6 +6,9 @@ COPY ["UnitTest/UnitTest.csproj", "UnitTest/"]
 COPY ["IntegrationTest/IntegrationTest.csproj", "IntegrationTest/"]
 COPY ["SecurityTest/SecurityTest.csproj", "SecurityTest/"]
 COPY ["DatabaseTest/DatabaseTest.csproj", "DatabaseTest/"]
+COPY ["MutationTest/MutationTest.csproj", "MutationTest/"]
+COPY ["ContractTest/ContractTest.csproj", "ContractTest/"]
+COPY ["PerformanceTest/PerformanceTest.csproj", "PerformanceTest/"]
 COPY ["WebAPIDevSecOps.slnx", "."]
 RUN dotnet restore
 

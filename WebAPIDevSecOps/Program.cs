@@ -59,6 +59,8 @@ builder.Services.AddOpenTelemetry()
     {
         metrics.AddAspNetCoreInstrumentation();
         metrics.AddHttpClientInstrumentation();
+        metrics.AddMeter(WebAPIDevSecOps.Services.QualityMetricsService.MeterName);
+        metrics.AddPrometheusExporter();
         if (enableConsoleExport)
             metrics.AddConsoleExporter();
     })
@@ -339,6 +341,7 @@ builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Configuration.GetSection("PasswordHashing"));
 builder.Services.Configure<ResilienceOptions>(builder.Configuration.GetSection("Resilience"));
 builder.Services.AddSingleton<DbResilienceService>();
+builder.Services.AddSingleton<WebAPIDevSecOps.Services.QualityMetricsService>();
 builder.Services.AddScoped<ILoginService, LoginService>();
 builder.Services.AddSingleton<WebAPIDevSecOps.Interfaces.ITokenBlacklistService, WebAPIDevSecOps.Services.TokenBlacklistService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
@@ -410,6 +413,9 @@ builder.Services.AddOpenApi(options =>
 });
 
 var app = builder.Build();
+
+app.Services.GetRequiredService<WebAPIDevSecOps.Services.QualityMetricsService>();
+Log.Information("Métricas de calidad registradas en el MeterProvider (test_coverage_percent, mutation_score, sonar_quality_gate_passed, p95_latency_ms)");
 
 var integritySection = builder.Configuration.GetSection("AssemblyIntegrity");
 var expectedHash = integritySection["ExpectedHash"];
@@ -548,6 +554,8 @@ app.MapHealthChecksUI(options =>
     options.UIPath = "/health-ui";
     options.ApiPath = "/health-ui-api";
 });
+
+app.MapPrometheusScrapingEndpoint();
 
 if (builder.Configuration.GetValue<bool>("EnableProviderStates"))
 {

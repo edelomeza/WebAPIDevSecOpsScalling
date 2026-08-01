@@ -27,6 +27,7 @@ using MassTransit;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
+using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
 Log.Logger = new LoggerConfiguration()
@@ -547,6 +548,68 @@ app.MapHealthChecksUI(options =>
     options.UIPath = "/health-ui";
     options.ApiPath = "/health-ui-api";
 });
+
+if (builder.Configuration.GetValue<bool>("EnableProviderStates"))
+{
+    app.MapPost("/provider-states", async (HttpContext context) =>
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasherService>();
+
+        if (!await db.SegUsuario.AnyAsync(u => u.id == 1))
+        {
+            db.SegUsuario.Add(new SegUsuario
+            {
+                id = 1,
+                strNombre = "admin",
+                strPWD = hasher.HashPassword("Admin123!"),
+                strCorreoElectronico = "admin@edelmeza.com",
+                dteFechaRegistro = DateTime.UtcNow,
+                bln2FAHabilitado = false
+            });
+        }
+
+        if (!await db.CliCliente.AnyAsync(c => c.id == 1))
+        {
+            db.CliCliente.Add(new CliCliente
+            {
+                id = 1,
+                strNombreCliente = "Cliente Demo",
+                strDireccionCliente = "Av. Demo 123",
+                strCorreoElectronico = "cliente@demo.com",
+                strNumeroTelefono = "5551234567"
+            });
+        }
+
+        if (!await db.ProProducto.AnyAsync(p => p.id == 1))
+        {
+            db.ProProducto.Add(new ProProducto
+            {
+                id = 1,
+                strNombreProducto = "Coca Cola 600ml",
+                strURLImagen = "https://imagen.com/coca.png",
+                strDescripcion = "Refresco",
+                intNumeroExistencia = 100,
+                decPrecio = 18.5m,
+                strCreadoPorUsuario = "admin"
+            });
+        }
+
+        if (!await db.VenCatEstado.AnyAsync(e => e.id == 1))
+        {
+            db.VenCatEstado.Add(new VenCatEstado
+            {
+                id = 1,
+                strValor = "ACTIVA",
+                strDescripcion = "Venta activa"
+            });
+        }
+
+        await db.SaveChangesAsync();
+        return Results.Ok(new { });
+    });
+}
 
 app.UseRateLimiter();
 app.UseAuthentication();

@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="DatabaseTest/DatabaseTest.csproj" />
+  <Project Path="ContractTest/ContractTest.csproj" />
   <Project Path="IntegrationTest/IntegrationTest.csproj" />
   <Project Path="MutationTest/MutationTest.csproj" />
   <Project Path="PerformanceTest/PerformanceTest.csproj" />

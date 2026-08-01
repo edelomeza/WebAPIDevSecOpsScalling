@@ -1,0 +1,68 @@
+{
+  "consumer": { "name": "web-app" },
+  "provider": { "name": "WebAPIDevSecOps" },
+  "interactions": [
+    {
+      "description": "crear pedido saga exitoso",
+      "providerState": "existen el cliente y los productos requeridos con stock",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/Ventas/pedido",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsIm5hbWVpZCI6ImFkbWluIiwianRpIjoiY29udHJhY3QtdGVzdC10b2tlbiIsInJvbGUiOiJBZG1pbiIsIm5iZiI6MTcxMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwLCJpc3MiOiJlZGVsbWV6YS5jb20iLCJhdWQiOiJlZGVsbWV6YS5jb20ifQ._sIHF9vim00TN-i7JaeQxR_nmYQUYnAWh0sgHADV1fQ"
+        },
+        "body": {
+          "idCliCliente": 1,
+          "Detalles": [
+            {
+              "idProProducto": 1,
+              "intCantidad": 2
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          "idCliCliente": 1,
+          "strNombreCliente": "Cliente Demo",
+          "dteFechaPedido": "2026-08-01T10:00:00Z",
+          "decTotal": 37,
+          "strEstadoSaga": "Pendiente",
+          "strMotivoRechazo": null,
+          "RowVersion": "AQ==",
+          "Detalles": [
+            {
+              "id": 1,
+              "idProProducto": 1,
+              "strNombreProducto": "Coca Cola 600ml",
+              "intCantidad": 2,
+              "decPrecioUnitario": 18.5
+            }
+          ]
+        },
+        "matchingRules": {
+          "$.body.id": { "match": "type" },
+          "$.body.idCliCliente": { "match": "integer" },
+          "$.body.strNombreCliente": { "match": "type" },
+          "$.body.dteFechaPedido": { "match": "type" },
+          "$.body.decTotal": { "match": "decimal" },
+          "$.body.strEstadoSaga": { "match": "type" },
+          "$.body.strMotivoRechazo": { "match": "type" },
+          "$.body.RowVersion": { "match": "type" },
+          "$.body.Detalles": { "match": "type", "min": 1 },
+          "$.body.Detalles[*].id": { "match": "integer" },
+          "$.body.Detalles[*].idProProducto": { "match": "integer" },
+          "$.body.Detalles[*].strNombreProducto": { "match": "type" },
+          "$.body.Detalles[*].intCantidad": { "match": "integer" },
+          "$.body.Detalles[*].decPrecioUnitario": { "match": "decimal" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

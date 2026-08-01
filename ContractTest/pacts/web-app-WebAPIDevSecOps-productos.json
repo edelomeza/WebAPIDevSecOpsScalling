@@ -1,0 +1,86 @@
+{
+  "consumer": { "name": "web-app" },
+  "provider": { "name": "WebAPIDevSecOps" },
+  "interactions": [
+    {
+      "description": "listar productos paginados",
+      "providerState": "existen productos registrados",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/producto",
+        "headers": { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsIm5hbWVpZCI6ImFkbWluIiwianRpIjoiY29udHJhY3QtdGVzdC10b2tlbiIsInJvbGUiOiJBZG1pbiIsIm5iZiI6MTcxMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwLCJpc3MiOiJlZGVsbWV6YS5jb20iLCJhdWQiOiJlZGVsbWV6YS5jb20ifQ._sIHF9vim00TN-i7JaeQxR_nmYQUYnAWh0sgHADV1fQ" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "Items": [
+            {
+              "id": 1,
+              "strNombreProducto": "Coca Cola 600ml",
+              "strURLImagen": "https://imagen.com/coca.png",
+              "strDescripcion": "Refresco",
+              "intNumeroExistencia": 100,
+              "decPrecio": 18.5,
+              "RowVersion": "AQ==",
+              "strCreadoPorUsuario": "admin"
+            }
+          ],
+          "TotalCount": 1,
+          "PageNumber": 1,
+          "PageSize": 10,
+          "TotalPages": 1
+        },
+        "matchingRules": {
+          "$.body.Items": { "match": "type", "min": 1 },
+          "$.body.Items[*].id": { "match": "integer" },
+          "$.body.Items[*].strNombreProducto": { "match": "type" },
+          "$.body.Items[*].strURLImagen": { "match": "type" },
+          "$.body.Items[*].strDescripcion": { "match": "type" },
+          "$.body.Items[*].intNumeroExistencia": { "match": "integer" },
+          "$.body.Items[*].decPrecio": { "match": "decimal" },
+          "$.body.Items[*].RowVersion": { "match": "type" },
+          "$.body.Items[*].strCreadoPorUsuario": { "match": "type" },
+          "$.body.TotalCount": { "match": "integer" },
+          "$.body.PageNumber": { "match": "integer" },
+          "$.body.PageSize": { "match": "integer" },
+          "$.body.TotalPages": { "match": "integer" }
+        }
+      }
+    },
+    {
+      "description": "obtener producto por id",
+      "providerState": "existe el producto con id 1",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/producto/1",
+        "headers": { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsIm5hbWVpZCI6ImFkbWluIiwianRpIjoiY29udHJhY3QtdGVzdC10b2tlbiIsInJvbGUiOiJBZG1pbiIsIm5iZiI6MTcxMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwLCJpc3MiOiJlZGVsbWV6YS5jb20iLCJhdWQiOiJlZGVsbWV6YS5jb20ifQ._sIHF9vim00TN-i7JaeQxR_nmYQUYnAWh0sgHADV1fQ" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": 1,
+          "strNombreProducto": "Coca Cola 600ml",
+          "strURLImagen": "https://imagen.com/coca.png",
+          "strDescripcion": "Refresco",
+          "intNumeroExistencia": 100,
+          "decPrecio": 18.5,
+          "RowVersion": "AQ==",
+          "strCreadoPorUsuario": "admin"
+        },
+        "matchingRules": {
+          "$.body.id": { "match": "integer" },
+          "$.body.strNombreProducto": { "match": "type" },
+          "$.body.strURLImagen": { "match": "type" },
+          "$.body.strDescripcion": { "match": "type" },
+          "$.body.intNumeroExistencia": { "match": "integer" },
+          "$.body.decPrecio": { "match": "decimal" },
+          "$.body.RowVersion": { "match": "type" },
+          "$.body.strCreadoPorUsuario": { "match": "type" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

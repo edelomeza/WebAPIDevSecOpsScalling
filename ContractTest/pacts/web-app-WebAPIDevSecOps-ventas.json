@@ -1,0 +1,52 @@
+{
+  "consumer": { "name": "web-app" },
+  "provider": { "name": "WebAPIDevSecOps" },
+  "interactions": [
+    {
+      "description": "crear venta exitosa",
+      "providerState": "existen el cliente y el usuario requeridos",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/venta",
+        "headers": {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsIm5hbWVpZCI6ImFkbWluIiwianRpIjoiY29udHJhY3QtdGVzdC10b2tlbiIsInJvbGUiOiJBZG1pbiIsIm5iZiI6MTcxMDAwMDAwMCwiZXhwIjo0MTAyNDQ0ODAwLCJpc3MiOiJlZGVsbWV6YS5jb20iLCJhdWQiOiJlZGVsbWV6YS5jb20ifQ._sIHF9vim00TN-i7JaeQxR_nmYQUYnAWh0sgHADV1fQ"
+        },
+        "body": {
+          "idCliCliente": 1,
+          "idSegUsuario": 1
+        }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "id": 1,
+          "idCliCliente": 1,
+          "strNombreCliente": "Cliente Demo",
+          "idSegUsuario": 1,
+          "strNombreUsuario": "admin",
+          "idVenCatEstado": 1,
+          "strEstado": "ACTIVA",
+          "dteFechaHoraCompra": "2026-08-01T10:00:00Z",
+          "strClaveVenta": "VENTA-000001",
+          "RowVersion": null
+        },
+        "matchingRules": {
+          "$.body.id": { "match": "integer" },
+          "$.body.idCliCliente": { "match": "integer" },
+          "$.body.strNombreCliente": { "match": "type" },
+          "$.body.idSegUsuario": { "match": "integer" },
+          "$.body.strNombreUsuario": { "match": "type" },
+          "$.body.idVenCatEstado": { "match": "integer" },
+          "$.body.strEstado": { "match": "type" },
+          "$.body.dteFechaHoraCompra": { "match": "type" },
+          "$.body.strClaveVenta": { "match": "type" },
+          "$.body.RowVersion": { "match": "type" }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

@@ -6,11 +6,11 @@
       "../IntegrationTest/IntegrationTest.csproj"
     ],
     "mutate": [
-      "../WebAPIDevSecOps/**",
-      "!../WebAPIDevSecOps/Migrations/**",
-      "!../WebAPIDevSecOps/Models/**",
-      "!../WebAPIDevSecOps/Dto/**",
-      "!../WebAPIDevSecOps/Program.cs"
+      "**",
+      "!**/Migrations/**",
+      "!**/Models/**",
+      "!**/Dto/**",
+      "!**/Program.cs"
     ],
     "thresholds": {
       "high": 80,

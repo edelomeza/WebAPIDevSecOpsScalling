@@ -162,7 +162,13 @@ Resumen: 4.2 = el "reglamento" (qué se muta, qué se excluye, qué score aprueb
 - La señal importante es la del código fusionado: si baja el score, el push falla y hay que corregir.
 5. Timeout de 30 min — Stryker con `coverage-analysis: perTest` sobre ~975 tests es lento; el timeout acota el costo del job.
 Resumen: 4.3 = el "policía" del pipeline: ejecuta Stryker en main, bloquea si el score < 60 (break) y deja el reporte HTML de supervivientes como evidencia. Es el puente entre la configuración (4.2) y la medición de línea base (4.4). Verificado local: Stryker 4.16.0 encuentra `WebAPIDevSecOps.csproj` a mutar con el config (ajuste necesario: `project` acepta el nombre del archivo, no una ruta — las rutas `solution`/`test-projects`/`mutate` sí van relativas al config file). | `.github/workflows/ci-cd.yml`, `MutationTest/stryker-config.json` | 4.2 |
-| 4.4 | ⬜ | `[MQA] F2.4` | Ejecutar Stryker línea base | `dotnet stryker --config-file MutationTest/stryker-config.json`. Reportar mutation score actual | — | 4.3 |
+| 4.4 | ✅ | `[MQA] F2.4` | Ejecutar Stryker línea base | **Hecho. Score final: 66.03%** (duración 2h06m). Su función es obtener la primera medición real del mutation score, el punto de partida desde el que se trabaja el 4.5 y contra el que el CI (4.3) comparará el futuro. En concreto:
+1. Corre la mutación completa por primera vez — ejecuta `dotnet stryker --config-file MutationTest/stryker-config.json` (proyecto + tests + exclusiones del 4.2) sin interrupciones. Genera ~500+ mutantes sobre servicios/controladores y ejecuta los ~975 tests contra cada uno. Tarda 30+ min. **Real: 2497 mutantes creados, 1249 probados, ~120 min.**
+2. Produce el número de referencia — reporta el mutation score actual (%). Hasta ahora todo es teoría: no sabemos si los tests existentes matan el 10%, 40% o 60% de los mutantes. La cobertura de línea (46.2%) no lo predice: puede haber código bien cubierto donde los tests solo verifican valores felices y no detectan cambios de comportamiento. **Real: 66.03% (837 killed, 326 survived, 86 timeout, 0 errors).**
+3. Identifica los supervivientes — el reporte HTML marca cada mutante sobreviviente y dónde está. Es el inventario de huecos de calidad: métodos sin asserts fuertes, condiciones sin verificar, ramas sin probar. **Real: reporte en `MutationTest/StrykerOutput/2026-07-31.18-20-41/reports/mutation-report.html` — 326 supervivientes + 86 timeouts por revisar.**
+4. Define el "antes" del 4.5 — sin línea base no puedes medir si los tests que agregues en 4.5 mejoran nada, ni sabes cuánto falta para el objetivo (≥70%, el threshold `low` del config; el CI bloquea en <60 con `break`). **Real: 66.03% → faltan ~4 puntos (matar ~50+ mutantes más) para ≥70%.**
+5. Valida el setup completo — es la prueba real de que config (4.2) + job CI (4.3) funcionan de verdad: si Stryker falla a mitad del run (problema de build, timeout de tests, etc.), es aquí donde se descubre, no en CI. **Real: ajuste necesario en `mutate` — los globs se resuelven relativos al proyecto mutado, no al config: `"**"` + exclusiones `!**/Migrations/**` etc. (con `../` todos los mutantes quedaban "Removed by mutate filter"). Safe Mode automático en `Verify2faAsync` (CS0165 por mutación → 81 compile errors esperados).**
+Resumen: 4.4 = el "electrocardiograma" de los tests: mide por primera vez su capacidad real de detectar cambios (mutation score), localiza los supervivientes y establece el punto de comparación para que 4.5 pueda elevar el score a ≥70% y el CI quede vigilando que no baje. | `MutationTest/stryker-config.json`, `MutationTest/StrykerOutput/` (reporte) | 4.3 |
 | 4.5 | ⬜ | `[MQA] F2.5` | Mejorar tests donde mutation score bajo | Identificar mutantes sobrevivientes, agregar tests que los maten. Repetir hasta score ≥70% | Archivos de test varios | 4.4 |
 | 4.6 | ⬜ | `[MQA] F3.1` | Crear proyecto PerformanceTest | NBomber + NBomber.Http, OutputType Exe. Referencia a WebAPIDevSecOps | `PerformanceTest/PerformanceTest.csproj` (nuevo) | 1.1 |
 | 4.7 | ⬜ | `[MQA] F3.2` | Escenario Login NBomber | POST `/api/v1/login` con rampa 5→50 usuarios concurrentes, 2min. Umbral P95 < 500ms, error < 0.1% | `PerformanceTest/Scenarios/LoginScenario.cs` (nuevo) | 4.6 |
@@ -327,7 +333,7 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ### FASE 4 — Validación Profunda (20 pasos)
 ```
-✅ 4.1  ✅ 4.2  ✅ 4.3  ▢ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
+✅ 4.1  ✅ 4.2  ✅ 4.3  ✅ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
 ▢ 4.9  ▢ 4.10 ▢ 4.11 ▢ 4.12 ▢ 4.13 ▢ 4.14 ▢ 4.15 ▢ 4.16
 ▢ 4.17 ▢ 4.18 ▢ 4.19 ▢ 4.20
 ```
@@ -345,8 +351,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ---
 
-**Total: 97 pasos | ✅ 61% completado (59/97)**
+**Total: 97 pasos | ✅ 62% completado (60/97)**
 
 ```
-Progreso: ██████████████████████████████████████████████████ 61%
+Progreso: ██████████████████████████████████████████████████ 62%
 ```

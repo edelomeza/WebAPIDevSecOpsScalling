@@ -1,0 +1,45 @@
+{
+  "consumer": { "name": "web-app" },
+  "provider": { "name": "WebAPIDevSecOps" },
+  "interactions": [
+    {
+      "description": "login exitoso con credenciales válidas",
+      "providerState": "existe un usuario con credenciales válidas",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/login/login",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "User": "admin", "Password": "Admin123!" }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "token": "jwt-valid-token",
+          "refreshToken": "refresh-token-valid",
+          "expiresAt": "2026-08-01T00:00:00Z"
+        },
+        "matchingRules": {
+          "$.body.token": { "match": "type" },
+          "$.body.refreshToken": { "match": "type" },
+          "$.body.expiresAt": { "match": "type" }
+        }
+      }
+    },
+    {
+      "description": "login rechazado con credenciales inválidas",
+      "providerState": "no existe el usuario o la contraseña es incorrecta",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/login/login",
+        "headers": { "Content-Type": "application/json" },
+        "body": { "User": "admin", "Password": "ContraseñaIncorrecta1!" }
+      },
+      "response": {
+        "status": 401
+      }
+    }
+  ],
+  "metadata": {
+    "pactSpecification": { "version": "3.0.0" }
+  }
+}

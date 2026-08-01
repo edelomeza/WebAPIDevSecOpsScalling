@@ -9,4 +9,6 @@ public class AuditLogEntry
     public long ResponseTimeMs { get; set; }
     public string? User { get; set; }
     public string? UserAgent { get; set; }
+    public string? PrevHash { get; set; }
+    public string? Hash { get; set; }
 }

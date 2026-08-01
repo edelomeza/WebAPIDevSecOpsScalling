@@ -68,5 +68,9 @@ Thumbs.db
 artifacts/
 pr-body*.md
 
+# Local run artifacts
+reports/
+MutationTest/StrykerOutput/
+
 # OpenCode
 .opencode/

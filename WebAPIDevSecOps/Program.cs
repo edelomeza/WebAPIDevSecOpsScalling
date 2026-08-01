@@ -27,6 +27,7 @@ using MassTransit;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
+using WebAPIDevSecOps.Models;
 using WebAPIDevSecOps.Services;
 
 Log.Logger = new LoggerConfiguration()
@@ -58,6 +59,8 @@ builder.Services.AddOpenTelemetry()
     {
         metrics.AddAspNetCoreInstrumentation();
         metrics.AddHttpClientInstrumentation();
+        metrics.AddMeter(WebAPIDevSecOps.Services.QualityMetricsService.MeterName);
+        metrics.AddPrometheusExporter();
         if (enableConsoleExport)
             metrics.AddConsoleExporter();
     })
@@ -338,6 +341,7 @@ builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.Configure<WebAPIDevSecOps.Dto.PasswordHasherOptions>(builder.Configuration.GetSection("PasswordHashing"));
 builder.Services.Configure<ResilienceOptions>(builder.Configuration.GetSection("Resilience"));
 builder.Services.AddSingleton<DbResilienceService>();
+builder.Services.AddSingleton<WebAPIDevSecOps.Services.QualityMetricsService>();
 builder.Services.AddScoped<ILoginService, LoginService>();
 builder.Services.AddSingleton<WebAPIDevSecOps.Interfaces.ITokenBlacklistService, WebAPIDevSecOps.Services.TokenBlacklistService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
@@ -409,6 +413,9 @@ builder.Services.AddOpenApi(options =>
 });
 
 var app = builder.Build();
+
+app.Services.GetRequiredService<WebAPIDevSecOps.Services.QualityMetricsService>();
+Log.Information("Métricas de calidad registradas en el MeterProvider (test_coverage_percent, mutation_score, sonar_quality_gate_passed, p95_latency_ms)");
 
 var integritySection = builder.Configuration.GetSection("AssemblyIntegrity");
 var expectedHash = integritySection["ExpectedHash"];
@@ -547,6 +554,70 @@ app.MapHealthChecksUI(options =>
     options.UIPath = "/health-ui";
     options.ApiPath = "/health-ui-api";
 });
+
+app.MapPrometheusScrapingEndpoint();
+
+if (builder.Configuration.GetValue<bool>("EnableProviderStates"))
+{
+    app.MapPost("/provider-states", async (HttpContext context) =>
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasherService>();
+
+        if (!await db.SegUsuario.AnyAsync(u => u.id == 1))
+        {
+            db.SegUsuario.Add(new SegUsuario
+            {
+                id = 1,
+                strNombre = "admin",
+                strPWD = hasher.HashPassword("Admin123!"),
+                strCorreoElectronico = "admin@edelmeza.com",
+                dteFechaRegistro = DateTime.UtcNow,
+                bln2FAHabilitado = false
+            });
+        }
+
+        if (!await db.CliCliente.AnyAsync(c => c.id == 1))
+        {
+            db.CliCliente.Add(new CliCliente
+            {
+                id = 1,
+                strNombreCliente = "Cliente Demo",
+                strDireccionCliente = "Av. Demo 123",
+                strCorreoElectronico = "cliente@demo.com",
+                strNumeroTelefono = "5551234567"
+            });
+        }
+
+        if (!await db.ProProducto.AnyAsync(p => p.id == 1))
+        {
+            db.ProProducto.Add(new ProProducto
+            {
+                id = 1,
+                strNombreProducto = "Coca Cola 600ml",
+                strURLImagen = "https://imagen.com/coca.png",
+                strDescripcion = "Refresco",
+                intNumeroExistencia = 100,
+                decPrecio = 18.5m,
+                strCreadoPorUsuario = "admin"
+            });
+        }
+
+        if (!await db.VenCatEstado.AnyAsync(e => e.id == 1))
+        {
+            db.VenCatEstado.Add(new VenCatEstado
+            {
+                id = 1,
+                strValor = "ACTIVA",
+                strDescripcion = "Venta activa"
+            });
+        }
+
+        await db.SaveChangesAsync();
+        return Results.Ok(new { });
+    });
+}
 
 app.UseRateLimiter();
 app.UseAuthentication();

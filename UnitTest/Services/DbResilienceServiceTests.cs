@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Polly.CircuitBreaker;
+using UnitTest.Common;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Services;
@@ -11,7 +12,7 @@ namespace UnitTest.Services;
 
 public class DbResilienceServiceTests
 {
-    private static DbResilienceService CreateService(int breakDurationSeconds = 5)
+    private static (DbResilienceService Service, Mock<ILogger<DbResilienceService>> Logger) CreateService(int breakDurationSeconds = 5)
     {
         var options = Options.Create(new ResilienceOptions
         {
@@ -21,7 +22,7 @@ public class DbResilienceServiceTests
             BreakDurationSeconds = breakDurationSeconds
         });
         var logger = new Mock<ILogger<DbResilienceService>>();
-        return new DbResilienceService(options, logger.Object);
+        return (new DbResilienceService(options, logger.Object), logger);
     }
 
     private static Mock<AppDbContext> CreateDbContextMock()
@@ -35,7 +36,7 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Opens_After_MinimumThroughput_Failures()
     {
-        var service = CreateService();
+        var (service, logger) = CreateService();
 
         var dbMock = CreateDbContextMock();
         dbMock.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -49,12 +50,14 @@ public class DbResilienceServiceTests
 
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
+
+        LogVerifier.VerifyLog(logger, LogLevel.Warning, "Circuit breaker abierto", Times.Once());
     }
 
     [Fact]
     public async Task CircuitBreaker_Closes_After_HalfOpen_Success()
     {
-        var service = CreateService(breakDurationSeconds: 1);
+        var (service, logger) = CreateService(breakDurationSeconds: 1);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -75,12 +78,15 @@ public class DbResilienceServiceTests
 
         var result = await service.SaveChangesAsync(dbMock.Object);
         Assert.Equal(1, result);
+
+        LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker en modo half-open", Times.Once());
+        LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker cerrado tras recuperación", Times.Once());
     }
 
     [Fact]
     public async Task CircuitBreaker_Reopens_After_HalfOpen_Failure()
     {
-        var service = CreateService(breakDurationSeconds: 1);
+        var (service, logger) = CreateService(breakDurationSeconds: 1);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -104,5 +110,8 @@ public class DbResilienceServiceTests
 
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
+
+        LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker en modo half-open", Times.Once());
+        LogVerifier.VerifyLog(logger, LogLevel.Warning, "Circuit breaker abierto", Times.Exactly(2));
     }
 }

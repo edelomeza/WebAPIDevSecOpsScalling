@@ -160,7 +160,7 @@ Resumen: 4.2 = el "reglamento" (qué se muta, qué se excluye, qué score aprueb
 4. Condiciones de ejecución — solo en push a main (no en PRs), como los demás jobs pesados (dockle, sonarcloud, database-test), porque:
 - Correr 500+ mutantes en cada PR tardaría demasiado y ralentizaría el ciclo de review.
 - La señal importante es la del código fusionado: si baja el score, el push falla y hay que corregir.
-5. Timeout de 30 min — Stryker con `coverage-analysis: perTest` sobre ~975 tests es lento; el timeout acota el costo del job.
+5. Timeout de 30 min — Stryker con `coverage-analysis: perTest` sobre ~975 tests es lento; el timeout acota el costo del job. **Nota 4.5: se subió a 180 min — el run real tardó ~2h30-2h45 (el timeout original de 30 min habría abortado el job siempre).**
 Resumen: 4.3 = el "policía" del pipeline: ejecuta Stryker en main, bloquea si el score < 60 (break) y deja el reporte HTML de supervivientes como evidencia. Es el puente entre la configuración (4.2) y la medición de línea base (4.4). Verificado local: Stryker 4.16.0 encuentra `WebAPIDevSecOps.csproj` a mutar con el config (ajuste necesario: `project` acepta el nombre del archivo, no una ruta — las rutas `solution`/`test-projects`/`mutate` sí van relativas al config file). | `.github/workflows/ci-cd.yml`, `MutationTest/stryker-config.json` | 4.2 |
 | 4.4 | ✅ | `[MQA] F2.4` | Ejecutar Stryker línea base | **Hecho. Score final: 66.03%** (duración 2h06m). Su función es obtener la primera medición real del mutation score, el punto de partida desde el que se trabaja el 4.5 y contra el que el CI (4.3) comparará el futuro. En concreto:
 1. Corre la mutación completa por primera vez — ejecuta `dotnet stryker --config-file MutationTest/stryker-config.json` (proyecto + tests + exclusiones del 4.2) sin interrupciones. Genera ~500+ mutantes sobre servicios/controladores y ejecuta los ~975 tests contra cada uno. Tarda 30+ min. **Real: 2497 mutantes creados, 1249 probados, ~120 min.**
@@ -169,7 +169,14 @@ Resumen: 4.3 = el "policía" del pipeline: ejecuta Stryker en main, bloquea si e
 4. Define el "antes" del 4.5 — sin línea base no puedes medir si los tests que agregues en 4.5 mejoran nada, ni sabes cuánto falta para el objetivo (≥70%, el threshold `low` del config; el CI bloquea en <60 con `break`). **Real: 66.03% → faltan ~4 puntos (matar ~50+ mutantes más) para ≥70%.**
 5. Valida el setup completo — es la prueba real de que config (4.2) + job CI (4.3) funcionan de verdad: si Stryker falla a mitad del run (problema de build, timeout de tests, etc.), es aquí donde se descubre, no en CI. **Real: ajuste necesario en `mutate` — los globs se resuelven relativos al proyecto mutado, no al config: `"**"` + exclusiones `!**/Migrations/**` etc. (con `../` todos los mutantes quedaban "Removed by mutate filter"). Safe Mode automático en `Verify2faAsync` (CS0165 por mutación → 81 compile errors esperados).**
 Resumen: 4.4 = el "electrocardiograma" de los tests: mide por primera vez su capacidad real de detectar cambios (mutation score), localiza los supervivientes y establece el punto de comparación para que 4.5 pueda elevar el score a ≥70% y el CI quede vigilando que no baje. | `MutationTest/stryker-config.json`, `MutationTest/StrykerOutput/` (reporte) | 4.3 |
-| 4.5 | ⬜ | `[MQA] F2.5` | Mejorar tests donde mutation score bajo | Identificar mutantes sobrevivientes, agregar tests que los maten. Repetir hasta score ≥70% | Archivos de test varios | 4.4 |
+| 4.5 | ✅ | `[MQA] F2.5` | Mejorar tests donde mutation score bajo | **Hecho. Score final: 80.70%** (línea base 66.03% → +14.67 puntos; duración run final 2h43m). Su función es elevar el mutation score ≥70% matando los mutantes sobrevivientes con tests más fuertes, usando el reporte de la línea base (4.4) como inventario de huecos. En concreto:
+1. Inventario de supervivientes — se extrajo del `mutation-report.json` de la línea base una kill-list de 567 entradas (45 archivos) con archivo/línea/operador (top: LoginService 40, VentaService 30, Login2faService 28, VentaDetalleService 22, PagoService 18, VentasPedidoService 16). Operadores dominantes: String 116, Statement 79, Equality 56, Object initializer 16. NoCoverage top: Login2faService 30, LoginService 14, ExceptionHandlingMiddleware 14, CspNonceMiddleware 11.
+2. Wave 1 (lógica de negocio y middleware, 8 archivos) — 66 tests nuevos: `LoginSecurityTests` (lockout Redis/fallback memoria, 5 intentos, rehash, JwtKey), `Login2faServiceSecurityTests` (~23, TOTP real con OtpNet, claim `2fa_temp`, fallos de seguridad), `ExceptionHandlingMiddlewareTests` (409/404/403/400/500 + forma JSON), `StockValidatorConsumerTests` + `PagoConsumerTests` (consumidores saga), `PasswordHasherServiceTests` (Argon2id/BCrypt/NeedsRehash), `DbResilienceServiceTests` + `CspNonceMiddlewareTests` (logs y nonce reforzados) + helper `LogVerifier`. **Resultado scoped: 27.3% → 76.75% en esos 8 archivos.**
+3. Wave 2 (CRUD ventas/saga, 4 archivos) — 41 tests nuevos: `VentaServiceTests` (límites de fecha exactos para matar mutantes `>=`/`<`, mensajes de excepción, RowVersion vacío sin conflicto), `VentaDetalleServiceTests` (ownership, stock con `diff < 0`, producto distinto con `intPiezaVenta == stock`, stock restaurado en delete), `PagoServiceConsistencyTests` (bucle determinista que observa ambas ramas del RNG 90/10: eventos `PagoProcesado`/`PagoRechazado` con contenido exacto + logs), `VentasPedidoServiceTests` (orden descendente, evento `PedidoCreadoEvent` con Detalles/Total exactos). **Resultado scoped: ~33% → 91.45% en esos 4 archivos.**
+4. Run completo final — `dotnet stryker` (UnitTest + IntegrationTest, 934 tests) sobre los 2179 mutantes. **Real: Killed 1068, Survived 207, Timeout 65, NoCoverage 64, CompileError 81 (safe mode `Verify2faAsync` esperado) → 80.70%.** Reporte: `MutationTest/StrykerOutput/2026-07-31.22-22-45/reports/mutation-report.html`.
+5. CI timeout — el job `mutation-test` tenía 30 min pero el run real tarda ~2h30-2h45: se subió `timeout-minutes` a 180 en `.github/workflows/ci-cd.yml` (el run final con 1340 mutantes a probar tomó 2h43m).
+6. Límites conocidos (no matables con InMemory) — relaciones requeridas (`Include` = INNER JOIN en InMemory, la fila desaparece en vez de devolver nav null → mutantes `Conditional (true)` de `?: null` quedan sobrevivientes por diseño de test unitario), `RandomNumberGenerator.GetInt32(100) < 90` (no inyectable), `SaveChangesAsync` en InMemory (no-op observable) y rutas agotadas como `GenerarClaveVentaUnicaAsync` (10 colisiones aleatorias). Todos documentados como supervivientes aceptados.
+Resumen: 4.5 = el "blitz" de calidad: convierte el reporte de supervivientes en tests que matan 231 mutantes más (837→1068) y deja el score 80.70%, por encima del threshold `high` (80) del config — el CI (4.3) queda vigilando con margen sobre el `break` (60). | `UnitTest/` (9 archivos nuevos + 2 modificados), `UnitTest/Common/LogVerifier.cs`, `.github/workflows/ci-cd.yml` | 4.4 |
 | 4.6 | ⬜ | `[MQA] F3.1` | Crear proyecto PerformanceTest | NBomber + NBomber.Http, OutputType Exe. Referencia a WebAPIDevSecOps | `PerformanceTest/PerformanceTest.csproj` (nuevo) | 1.1 |
 | 4.7 | ⬜ | `[MQA] F3.2` | Escenario Login NBomber | POST `/api/v1/login` con rampa 5→50 usuarios concurrentes, 2min. Umbral P95 < 500ms, error < 0.1% | `PerformanceTest/Scenarios/LoginScenario.cs` (nuevo) | 4.6 |
 | 4.8 | ⬜ | `[MQA] F3.3` | Escenario Productos GET | GET `/api/v1/producto` con 100 usuarios constantes, 2min. Umbral P95 < 200ms, error < 0.1% | `PerformanceTest/Scenarios/ProductoScenario.cs` (nuevo) | 4.7 |
@@ -333,7 +340,7 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ### FASE 4 — Validación Profunda (20 pasos)
 ```
-✅ 4.1  ✅ 4.2  ✅ 4.3  ✅ 4.4  ▢ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
+✅ 4.1  ✅ 4.2  ✅ 4.3  ✅ 4.4  ✅ 4.5  ▢ 4.6  ▢ 4.7  ▢ 4.8
 ▢ 4.9  ▢ 4.10 ▢ 4.11 ▢ 4.12 ▢ 4.13 ▢ 4.14 ▢ 4.15 ▢ 4.16
 ▢ 4.17 ▢ 4.18 ▢ 4.19 ▢ 4.20
 ```
@@ -351,8 +358,8 @@ La única brecha remanente post-Fase 6 es **2FA/MFA Level 3** (OWASP ASVS V2.8),
 
 ---
 
-**Total: 97 pasos | ✅ 62% completado (60/97)**
+**Total: 97 pasos | ✅ 63% completado (61/97)**
 
 ```
-Progreso: ██████████████████████████████████████████████████ 62%
+Progreso: ██████████████████████████████████████████████████ 63%
 ```

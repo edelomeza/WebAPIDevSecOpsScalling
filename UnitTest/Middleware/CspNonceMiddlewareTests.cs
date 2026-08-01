@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
@@ -157,6 +157,57 @@ namespace UnitTest.Middleware
             await middleware.InvokeAsync(context);
 
             context.Response.Body.Should().BeSameAs(originalBody);
+        }
+
+        [Fact]
+        public async Task InvokeAsync_ScalarPathHtml_ReemplazaScriptYStyleConNonce()
+        {
+            var env = CreateEnv("Development");
+            var context = new DefaultHttpContext();
+            context.Request.Path = "/scalar";
+            context.Response.ContentType = "text/html; charset=utf-8";
+            var originalBody = new MemoryStream();
+            context.Response.Body = originalBody;
+            const string html = "<html><script src=\"app.js\"></script><style>.x{}</style></html>";
+            var invocations = 0;
+            var middleware = new CspNonceMiddleware(async ctx =>
+            {
+                invocations++;
+                await ctx.Response.WriteAsync(html);
+            }, env, _loggerMock.Object);
+
+            await middleware.InvokeAsync(context);
+
+            var nonce = context.Items["ScriptNonce"]!.ToString()!;
+            originalBody.Seek(0, SeekOrigin.Begin);
+            var result = await new StreamReader(originalBody).ReadToEndAsync();
+            result.Should().Contain($"<script src=\"app.js\" nonce=\"{nonce}\">");
+            result.Should().Contain($"<style nonce=\"{nonce}\">");
+            invocations.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task InvokeAsync_ScalarPathNoHtml_CopiaCuerpoSinModificar()
+        {
+            var env = CreateEnv("Development");
+            var context = new DefaultHttpContext();
+            context.Request.Path = "/scalar";
+            context.Response.ContentType = "application/json";
+            var originalBody = new MemoryStream();
+            context.Response.Body = originalBody;
+            var invocations = 0;
+            var middleware = new CspNonceMiddleware(async ctx =>
+            {
+                invocations++;
+                await ctx.Response.WriteAsync("{\"ok\":true}");
+            }, env, _loggerMock.Object);
+
+            await middleware.InvokeAsync(context);
+
+            originalBody.Seek(0, SeekOrigin.Begin);
+            var result = await new StreamReader(originalBody).ReadToEndAsync();
+            result.Should().Be("{\"ok\":true}");
+            invocations.Should().Be(1);
         }
     }
 

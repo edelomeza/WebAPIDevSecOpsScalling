@@ -48,10 +48,14 @@ public class AuditLoggingMiddleware
                 UserAgent = context.Request.Headers["User-Agent"]
             };
 
+            var content = AuditHashChain.BuildContent(entry);
+            (entry.PrevHash, entry.Hash) = AuditHashChain.Append(content);
+
             _logger.LogInformation(
-                "Audit: {Method} {Path} -> {StatusCode} | {ResponseTimeMs}ms | User={User} | Agent={Agent}",
+                "Audit: {Method} {Path} -> {StatusCode} | {ResponseTimeMs}ms | User={User} | Agent={Agent} | PrevHash={PrevHash} | Hash={Hash}",
                 entry.HttpMethod, entry.Path, entry.StatusCode,
-                entry.ResponseTimeMs, entry.User, entry.UserAgent);
+                entry.ResponseTimeMs, entry.User, entry.UserAgent,
+                entry.PrevHash, entry.Hash);
         }
     }
 }

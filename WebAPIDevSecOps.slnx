@@ -2,6 +2,7 @@
   <Project Path="DatabaseTest/DatabaseTest.csproj" />
   <Project Path="IntegrationTest/IntegrationTest.csproj" />
   <Project Path="MutationTest/MutationTest.csproj" />
+  <Project Path="PerformanceTest/PerformanceTest.csproj" />
   <Project Path="SecurityTest/SecurityTest.csproj" />
   <Project Path="UnitTest/UnitTest.csproj" />
   <Project Path="WebAPIDevSecOps/WebAPIDevSecOps.csproj" />

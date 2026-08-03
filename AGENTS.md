@@ -120,6 +120,10 @@ Full analysis in `agent.md`. Key knowledge not previously known, with evidence:
 - .NET 10 base image changed `ASPNETCORE_URLS` → `ASPNETCORE_HTTP_PORTS` (dockle)
 - Coverage threshold must match reality (75% hardcoded vs 46% real → 45%)
 
+**Recovery tests con Testcontainers (Fase 5)**
+- Testcontainers 4.13 `MsSqlContainer` publica un puerto host **aleatorio** y, tras `StopAsync`/`StartAsync`, re-pública en un **puerto nuevo** (el viejo muere) → la connection string de la app queda obsoleta y el health nunca recupera
+- Solución: `ContainerBuilder` genérico con `WithPortBinding(hostPort, 1433)` — **en v4 el orden es (hostPort, containerPort)**, invertido a v3 — el puerto fijo sí sobrevive al restart (verificado empíricamente)
+
 **Rules for the future**
 1. Verify empirically before writing (metric names, report formats, config semantics)
 2. Measure real runtimes before setting CI timeouts; set coverage thresholds from real numbers

@@ -91,6 +91,8 @@ Full analysis in `agent.md`. Key knowledge not previously known, with evidence:
 - Real run takes ~2h30–2h45 → CI timeout must be 180min, not 30min
 - Score formula: `(Killed+Timeout)/(Killed+Timeout+Survived+NoCoverage)` — excludes CompileError, filters Ignored; the real `mutation-report.json` has NO root `mutationScore` key
 - Some mutants are unkillable by design with InMemory (Include=INNER JOIN, `RandomNumberGenerator.GetInt32` not injectable, `SaveChangesAsync` no-op) → document as accepted survivors
+- **Safe Mode = blind spot**: an "unidentified" compile error (e.g. CS0165 unassigned local from `statementRemoval` on `x = Foo();` with try/catch-throw pattern) makes Stryker drop **all** mutants of that method as CompileError (excluded from score → looks fine but the method is untested). Fix: assign in **all** branches (`catch { x = default!; throw ...; }`) so any single mutation still compiles
+- Equivalent mutations are unkillable: `A||B||C → A&&B||C` on TOTP code validation (`IsNullOrEmpty || Length!=6 || !All(digit)`) is behavior-identical because empty ⇒ length≠6 → document, don't chase
 - FsCheck generates boundary-padded strings → flaky tests if not `.Trim()`-compared
 
 **Performance (NBomber)**

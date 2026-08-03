@@ -112,6 +112,7 @@ namespace WebAPIDevSecOps.Services
             }
             catch (Exception)
             {
+                principal = default!;
                 throw new UnauthorizedAccessException("Token temporal inválido o expirado.");
             }
 

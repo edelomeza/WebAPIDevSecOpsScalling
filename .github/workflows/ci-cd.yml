@@ -721,6 +721,69 @@ jobs:
             zap-pr-report.html
             zap-pr-report.json
 
+  hardening-report:
+    name: Hardening Report (Combinado)
+    runs-on: ubuntu-latest
+    needs: [docker-build, dockle-scan, semgrep, dast, zap-pr]
+    if: always()
+    timeout-minutes: 10
+
+    steps:
+      - name: Download Trivy Report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: trivy-report
+          path: hardening/trivy
+          if-no-files-found: warn
+
+      - name: Download Dockle Report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: dockle-report
+          path: hardening/dockle
+          if-no-files-found: warn
+
+      - name: Download Semgrep Report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: semgrep-report
+          path: hardening/semgrep
+          if-no-files-found: warn
+
+      - name: Download ZAP Report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: dast-report
+          path: hardening/zap
+          if-no-files-found: warn
+
+      - name: Download ZAP PR Report
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: zap-pr-report
+          path: hardening/zap-pr
+          if-no-files-found: warn
+
+      - name: Generate combined hardening summary
+        run: python3 scripts/hardening_summary.py
+
+      - name: Upload Hardening Report Combinado
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hardening-report
+          path: hardening/
+
   pr-quality-gate:
     name: PR Quality Gate
     runs-on: ubuntu-latest

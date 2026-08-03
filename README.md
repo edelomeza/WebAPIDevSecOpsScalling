@@ -19,7 +19,7 @@ Scalable REST API built with ASP.NET Core 10: JWT authentication, Argon2id hashi
 | **Distributed Cache** | Key-value cache-aside on Redis (`StackExchangeRedis`), per-key TTLs (30–120s), invalidation on writes, in-memory fallback if Redis is down |
 | **Message Queues** | Choreographed sales saga with MassTransit (InMemory transport locally): 7 events, 4 consumers, flow pedido → stock → pago → factura with compensation |
 | **Metrics** | OpenTelemetry + Prometheus (`/metrics`): test coverage, mutation score, SonarCloud quality gate, P95 latency — visualized in a Grafana dashboard |
-| **QA Implementation** | 6 test suites (unit 596, integration 352, security 136, database, contract Pact, mutation Stryker), performance testing (NBomber), fuzzing (RESTler), quality gates enforced in CI |
+| **QA Implementation** | 6 test suites (unit 600, integration 357, security 136, database, contract Pact, mutation Stryker), performance testing (NBomber), fuzzing (RESTler), SQL recovery tests (Testcontainers), quality gates enforced in CI |
 
 ---
 
@@ -84,37 +84,48 @@ POST /api/v1/Ventas/pedido
 │  StockValidatorConsumer     │
 │  Validates stock, discounts │
 └─────────────────────────────┘
-         ├── OK ──▶ StockValidadoEvent ──▶ PagoConsumer (90% success simulation)
-         └── FAIL ─▶ StockRechazadoEvent ──▶ Rechazado (END)
+          ├── OK ──▶ StockValidadoEvent ──▶ PagoConsumer (90% success simulation)
+          └── FAIL ─▶ StockRechazadoEvent ──▶ StockRechazado (END)
                       ▼
 ┌─────────────────────────────┐
 │  PagoConsumer               │
 └─────────────────────────────┘
-         ├── OK ──▶ PagoProcesadoEvent ──▶ FacturaConsumer (sequential folio F-{year}-{seq})
-         └── FAIL ─▶ PagoRechazadoEvent ──▶ Compensation (release stock)
+          ├── OK ──▶ PagoProcesadoEvent ──▶ FacturaConsumer (sequential folio F-{year}-{seq})
+          └── FAIL ─▶ PagoRechazadoEvent ──▶ Compensation (release stock)
                       ▼
 ┌─────────────────────────────┐
 │  FacturaConsumer            │
 └─────────────────────────────┘
-         ├── OK ──▶ FacturaGeneradoEvent ──▶ Facturado (END)
-         └── FAIL ─▶ FacturaRechazadaEvent ──▶ Compensation (refund + release stock)
+          ├── OK ──▶ FacturaGeneradoEvent ──▶ Facturado (END)
+          └── FAIL ─▶ FacturaRechazadaEvent ──▶ Compensation (refund + release stock)
 ```
 
-**Saga states:** `Pendiente | StockValidado | PagoProcesado | Facturado | Rechazado | Reembolsado`
+**Saga states:** `Pendiente | StockValidado | StockRechazado | Pagado | PagoRechazado | Facturado | CompensadoPago | CompensadoFactura`
 
 | Event | Published by | Advances to |
 |---|---|---|
 | `PedidoCreadoEvent` | VentasPedidoService | Pendiente → Stock validation |
 | `StockValidadoEvent` | StockValidatorConsumer | StockValidado |
-| `StockRechazadoEvent` | StockValidatorConsumer | Rechazado (END) |
-| `PagoProcesadoEvent` | PagoConsumer | PagoProcesado |
-| `PagoRechazadoEvent` | PagoConsumer | Rechazado + release stock |
+| `StockRechazadoEvent` | StockValidatorConsumer | StockRechazado (END) |
+| `PagoProcesadoEvent` | PagoConsumer | Pagado |
+| `PagoRechazadoEvent` | PagoConsumer | PagoRechazado → Compensation (release stock) → CompensadoPago |
 | `FacturaGeneradoEvent` | FacturaConsumer | Facturado (END) |
-| `FacturaRechazadaEvent` | FacturaConsumer | Reembolsado (refund + release stock) |
+| `FacturaRechazadaEvent` | FacturaConsumer | Compensation (refund + release stock) → CompensadoFactura |
 
 **Consumers:** `StockValidatorConsumer`, `PagoConsumer`, `FacturaConsumer`, `CompensationConsumer`.
 
 Transport is **MassTransit InMemory** for local development (no AWS dependency). AmazonSQS transport is planned for production.
+
+### Saga Dashboard & Timeline
+
+Operational visibility into the saga, protected with `AdminOnly` and rate limited by `AdminPolicy`:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/Ventas/dashboard` | Aggregated metrics: total orders today, sales today (sum of `Facturado` totals), orders grouped by saga state, SQS queue depth |
+| `GET /api/v1/Ventas/saga/{id}/diagrama` | Per-order timeline: every saga step in order (creation → stock → payment → invoicing, or rejection/compensation), rebuilt from persisted data |
+
+Queue depth is a placeholder while the transport is MassTransit InMemory (it does not expose queue depth); it will be populated once AmazonSQS is enabled.
 
 ---
 
@@ -149,7 +160,7 @@ Distributed key-value cache-aside on Redis via `IDistributedCache`:
 | `/health-ui` | Health checks UI |
 | **Grafana** | `deploy/grafana/quality-dashboard.json` |
 
-Exported gauges: `test_coverage_percent`, `mutation_score_percent`, `sonar_quality_gate_passed`, `p95_latency_ms` (populated by `scripts/collect-quality-metrics.sh` from SonarCloud / Stryker / NBomber reports).
+Exported gauges: `test_coverage_percent`, `mutation_score_percent`, `sonar_quality_gate_passed`, `p95_latency_ms_milliseconds` (populated by `scripts/collect-quality-metrics.sh` from SonarCloud / Stryker / NBomber reports; note the Prometheus exporter appends unit suffixes to metric names).
 
 ---
 
@@ -239,6 +250,8 @@ docker compose -f deploy/docker-compose.local.yml up -d
 | `GET` | `/api/v1/Ventas/pago` | Authorize | Paginated payment list |
 | `GET` | `/api/v1/Ventas/factura/{id}` | Authorize | Get invoice by ID |
 | `GET` | `/api/v1/Ventas/factura` | Authorize | Paginated invoice list |
+| `GET` | `/api/v1/Ventas/dashboard` | AdminOnly | Saga dashboard: orders/sales today, orders per state, queue depth |
+| `GET` | `/api/v1/Ventas/saga/{id}/diagrama` | AdminOnly | Saga timeline for one order (events + timestamps) |
 | `GET` | `/health` | No | Full health checks |
 | `GET` | `/health/ready` | No | Database-only health check |
 | `GET` | `/health-ui` | No | Health checks UI |
@@ -284,8 +297,8 @@ WebAPIDevSecOps/
 │   ├── Models/                  # Database entities (12 entities)
 │   ├── Dto/                     # Request/Response models + Validators
 │   └── Migrations/              # EF Core migrations
-├── UnitTest/                    # Unit tests (596 tests)
-├── IntegrationTest/             # Integration tests (352 tests)
+├── UnitTest/                    # Unit tests (600 tests)
+├── IntegrationTest/             # Integration tests (357 tests)
 ├── SecurityTest/                # Security tests (136 tests)
 ├── DatabaseTest/                # DB migration tests (Testcontainers SQL Server)
 ├── ContractTest/                # Contract tests (Pact)
@@ -293,7 +306,7 @@ WebAPIDevSecOps/
 ├── PerformanceTest/             # Performance tests (NBomber)
 ├── fuzzing/                     # RESTler fuzzing config + helpers
 ├── deploy/                      # Docker Compose local + Grafana dashboard
-├── scripts/                     # Coverage check + quality metrics collector
+├── scripts/                     # Coverage check, quality metrics collector, hardening report summary
 └── .semgrep/                    # Custom Semgrep rules
 ```
 
@@ -304,12 +317,12 @@ WebAPIDevSecOps/
 ```
 push → build-and-test → docker-build (+Cosign) → dockle → sonarcloud
      → database-test → mutation-test → contract-test → semgrep
-     → fuzz (RESTler) → DAST (ZAP) ×2 → PR Quality Gate
+     → fuzz (RESTler) → DAST (ZAP) ×2 → hardening-report → PR Quality Gate
 ```
 
 | Stage | Tool | What it checks |
 |---|---|---|
-| **Build & Test** | xUnit + Moq + FluentAssertions | Unit (596), integration (352), security (136) tests, vulnerable dependencies, SBOM (CycloneDX) |
+| **Build & Test** | xUnit + Moq + FluentAssertions | Unit (600), integration (357), security (136) tests, vulnerable dependencies, SBOM (CycloneDX) |
 | **Docker Build** | Docker + Cosign | Build and push image, keyless sign, verify signature, Trivy scan (HIGH/CRITICAL blocks) |
 | **Container Lint** | Dockle | Dockerfile/container best practices |
 | **SAST** | SonarCloud + Semgrep | Static analysis + custom rules; coverage threshold ≥ 45% |
@@ -318,6 +331,7 @@ push → build-and-test → docker-build (+Cosign) → dockle → sonarcloud
 | **Contract Test** | Pact | Provider contract verification against consumer expectations |
 | **Fuzzing** | RESTler | Automated API fuzzing from OpenAPI spec |
 | **DAST** | OWASP ZAP | Dynamic attacks using OpenAPI spec (push + PR) |
+| **Hardening Report** | Trivy + Dockle + ZAP + Semgrep | Downloads all scan reports (those produced per event) and consolidates them into a single `hardening-report` artifact with a findings summary |
 | **PR Quality Gate** | GitHub Script | Verifies build-and-test + semgrep, comments results on PR |
 
 ---
@@ -356,6 +370,7 @@ Additional QA techniques:
 - **Property-based testing** (FsCheck): random CRUD sequences validated for transactional integrity
 - **Race conditions**: parallel writes tested (5 concurrent sales → only 1 succeeds)
 - **Recovery**: Redis failure fallback, circuit breaker open/half-open/closed tests
+- **Database recovery**: SQL Server stopped → `/health/ready` returns 503, restart → recovers to 200 (Testcontainers, requires Docker)
 
 ---
 

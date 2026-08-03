@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,20 @@ public class DbResilienceServiceTests
         return new Mock<AppDbContext>(opts) { CallBase = true };
     }
 
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout, string message)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (condition())
+            {
+                return;
+            }
+            await Task.Delay(25);
+        }
+        Assert.Fail($"Timeout esperando estado: {message}");
+    }
+
     [Fact]
     public async Task CircuitBreaker_Opens_After_MinimumThroughput_Failures()
     {
@@ -47,6 +62,9 @@ public class DbResilienceServiceTests
             await Assert.ThrowsAsync<DbUpdateException>(() =>
                 service.SaveChangesAsync(dbMock.Object));
         }
+
+        await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
+            TimeSpan.FromSeconds(5), "circuito abierto tras mínimo de fallos");
 
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
@@ -71,6 +89,9 @@ public class DbResilienceServiceTests
                 service.SaveChangesAsync(dbMock.Object));
         }
 
+        await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
+            TimeSpan.FromSeconds(5), "circuito abierto tras mínimo de fallos");
+
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
 
@@ -78,6 +99,7 @@ public class DbResilienceServiceTests
 
         var result = await service.SaveChangesAsync(dbMock.Object);
         Assert.Equal(1, result);
+        Assert.Equal(CircuitState.Closed, service.CircuitState);
 
         LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker en modo half-open", Times.Once());
         LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker cerrado tras recuperación", Times.Once());
@@ -100,6 +122,9 @@ public class DbResilienceServiceTests
                 service.SaveChangesAsync(dbMock.Object));
         }
 
+        await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
+            TimeSpan.FromSeconds(5), "circuito abierto tras mínimo de fallos");
+
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
 
@@ -107,6 +132,9 @@ public class DbResilienceServiceTests
 
         await Assert.ThrowsAsync<DbUpdateException>(() =>
             service.SaveChangesAsync(dbMock.Object));
+
+        await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
+            TimeSpan.FromSeconds(5), "circuito reabierto tras fallo en half-open");
 
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));

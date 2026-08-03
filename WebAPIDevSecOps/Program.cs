@@ -358,6 +358,7 @@ builder.Services.AddScoped<IVentasPedidoService, VentasPedidoService>();
 builder.Services.AddScoped<IPagoService, PagoService>();
 builder.Services.AddScoped<IFacturaService, FacturaService>();
 builder.Services.AddScoped<ICompensationService, CompensationService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<ILogin2faService, Login2faService>();
 

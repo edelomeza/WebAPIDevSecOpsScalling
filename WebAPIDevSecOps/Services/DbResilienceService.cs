@@ -10,11 +10,15 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly ResiliencePipeline _pipeline;
         private readonly ILogger<DbResilienceService> _logger;
+        private readonly CircuitBreakerStateProvider _circuitStateProvider;
         private long _failureCount;
+
+        public CircuitState CircuitState => _circuitStateProvider.CircuitState;
 
         public DbResilienceService(IOptions<ResilienceOptions> options, ILogger<DbResilienceService> logger)
         {
             _logger = logger;
+            _circuitStateProvider = new CircuitBreakerStateProvider();
 
             _pipeline = new ResiliencePipelineBuilder()
                 .AddCircuitBreaker(new CircuitBreakerStrategyOptions
@@ -23,6 +27,7 @@ namespace WebAPIDevSecOps.Services
                     SamplingDuration = TimeSpan.FromSeconds(options.Value.SamplingDurationSeconds),
                     MinimumThroughput = options.Value.MinimumThroughput,
                     BreakDuration = TimeSpan.FromSeconds(options.Value.BreakDurationSeconds),
+                    StateProvider = _circuitStateProvider,
                     OnOpened = args =>
                     {
                         var count = Interlocked.Read(ref _failureCount);

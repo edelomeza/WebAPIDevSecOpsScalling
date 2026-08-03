@@ -327,5 +327,49 @@ namespace UnitTest.Login2fa
 
             ex.Message.Should().Be("Token temporal inválido o expirado.");
         }
+
+        [Fact]
+        public async Task Verify2fa_CuentaBloqueadaEnRedis_LanzaExcepcion()
+        {
+            var context = await CreateContextWithUser(with2fa: true);
+            var (service, cache, _, _) = BuildService(context, CreateConfig(), CreateHasher());
+
+            var login = await service.Login2faAsync(CreateRequest(), CancellationToken.None);
+            cache.Setup(c => c.GetAsync("lockout:admin", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Encoding.UTF8.GetBytes("1"));
+
+            var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                service.Verify2faAsync(new Login2faVerifyRequest(login.TempToken, ComputeTotp()), CancellationToken.None));
+
+            ex.Message.Should().Contain("bloqueada");
+        }
+
+        [Fact]
+        public async Task Verify2fa_Exitoso_LimpiaLockoutEIntentos()
+        {
+            var context = await CreateContextWithUser(with2fa: true);
+            var (service, cache, _, _) = BuildService(context, CreateConfig(), CreateHasher());
+
+            var login = await service.Login2faAsync(CreateRequest(), CancellationToken.None);
+            cache.Invocations.Clear();
+
+            await service.Verify2faAsync(new Login2faVerifyRequest(login.TempToken, ComputeTotp()), CancellationToken.None);
+
+            cache.Verify(c => c.RemoveAsync("lockout:admin", It.IsAny<CancellationToken>()), Times.Once());
+            cache.Verify(c => c.RemoveAsync("attempts:admin", It.IsAny<CancellationToken>()), Times.Once());
+        }
+
+        [Fact]
+        public async Task Verify2fa_CodigoConLetras_Rechazado()
+        {
+            var context = await CreateContextWithUser(with2fa: true);
+            var (service, _, _, _) = BuildService(context, CreateConfig(), CreateHasher());
+
+            var login = await service.Login2faAsync(CreateRequest(), CancellationToken.None);
+            var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                service.Verify2faAsync(new Login2faVerifyRequest(login.TempToken, "12A456"), CancellationToken.None));
+
+            ex.Message.Should().Contain("6 dígitos");
+        }
     }
 }

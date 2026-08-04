@@ -70,6 +70,7 @@ pr-body*.md
 
 # Local run artifacts
 reports/
+perf-reports/
 MutationTest/StrykerOutput/
 
 # OpenCode

@@ -41,7 +41,7 @@ namespace PerformanceTest.Scenarios
                     _bearerToken = await AuthHelper.LoginAndGetTokenAsync(client, loginUrl, user, password);
                     Console.WriteLine($"[VentaScenario] Token JWT obtenido para {user}");
                 }),
-                Simulation.RampingConstant(MaxUsers, Duration));
+                Simulation.RampingConstant(Env.Int("PERF_VENTA_USERS", MaxUsers), Duration));
         }
     }
 }

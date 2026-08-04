@@ -1,0 +1,41 @@
+﻿{
+  "name": "redis-latency",
+  "description": "Inyectar 2s de latencia de red en Redis durante carga NBomber: la API degrada gracefulmente — los timeouts de IDistributedCache disparan el fallback a IMemoryCache (paso 1.13) y /health/ready sigue en 200 (BD intacta). La recuperación elimina el qdisc netem (latency-off). Requiere host Linux (tc netem); en Windows el paso se marca Skipped con WARN.",
+  "target": "redis",
+  "load": {
+    "command": "dotnet",
+    "args": [
+      "run",
+      "--project",
+      "PerformanceTest/PerformanceTest.csproj",
+      "-c",
+      "Release",
+      "--no-build"
+    ],
+    "warmupSeconds": 30,
+    "env": {
+      "PERF_API_BASE_URL": "http://localhost:8080",
+      "PERF_LOGIN_USER": "admin",
+      "PERF_LOGIN_PASSWORD": "Admin123!",
+      "PERF_LOGIN_USERS": "10",
+      "PERF_PRODUCTO_USERS": "20",
+      "PERF_VENTA_USERS": "10",
+      "PERF_MIXTO_USERS": "20"
+    }
+  },
+  "steps": [
+    {
+      "name": "inyectar 2s de latencia en redis",
+      "action": "latency",
+      "latencyMs": 2000,
+      "verify": {
+        "method": "GET",
+        "url": "http://localhost:8080/health/ready",
+        "expectedStatus": 200
+      }
+    }
+  ],
+  "recovery": [
+    { "action": "latency-off", "target": "redis" }
+  ]
+}

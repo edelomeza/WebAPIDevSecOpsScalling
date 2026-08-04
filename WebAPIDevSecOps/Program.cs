@@ -237,12 +237,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddRateLimiter(options =>
 {
+    var globalPermitLimit = builder.Configuration.GetValue("RateLimiting:GlobalPermitLimit", 1000);
+    var loginPermitLimit = builder.Configuration.GetValue("RateLimiting:LoginPermitLimit", 5);
+    var login2faVerifyPermitLimit = builder.Configuration.GetValue("RateLimiting:Login2faVerifyPermitLimit", 10);
+    var adminPermitLimit = builder.Configuration.GetValue("RateLimiting:AdminPermitLimit", 200);
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 1000,
+                PermitLimit = globalPermitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst
@@ -251,7 +256,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddSlidingWindowLimiter("LoginPolicy", opt =>
     {
         opt.Window = TimeSpan.FromMinutes(5);
-        opt.PermitLimit = 5;
+        opt.PermitLimit = loginPermitLimit;
         opt.SegmentsPerWindow = 5;
         opt.QueueLimit = 0;
     });
@@ -259,7 +264,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddSlidingWindowLimiter("Login2faVerifyPolicy", opt =>
     {
         opt.Window = TimeSpan.FromMinutes(5);
-        opt.PermitLimit = 10;
+        opt.PermitLimit = login2faVerifyPermitLimit;
         opt.SegmentsPerWindow = 5;
         opt.QueueLimit = 0;
     });
@@ -267,7 +272,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddSlidingWindowLimiter("AdminPolicy", opt =>
     {
         opt.Window = TimeSpan.FromMinutes(1);
-        opt.PermitLimit = 200;
+        opt.PermitLimit = adminPermitLimit;
         opt.SegmentsPerWindow = 4;
         opt.QueueLimit = 0;
     });
@@ -320,9 +325,17 @@ if (useInMemory)
 }
 else
 {
+    var redisConfig = StackExchange.Redis.ConfigurationOptions.Parse(
+        builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379");
+    redisConfig.AbortOnConnectFail = false;
+    redisConfig.ConnectTimeout = 2000;
+    redisConfig.SyncTimeout = 1000;
+    redisConfig.AsyncTimeout = 500;
+    redisConfig.ConnectRetry = 1;
+    redisConfig.ReconnectRetryPolicy = new StackExchange.Redis.ExponentialRetry(5000);
     builder.Services.AddStackExchangeRedisCache(options =>
     {
-        options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+        options.ConfigurationOptions = redisConfig;
     });
 }
 
@@ -566,57 +579,93 @@ if (builder.Configuration.GetValue<bool>("EnableProviderStates"))
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasherService>();
 
-        if (!await db.SegUsuario.AnyAsync(u => u.id == 1))
+        if (!useInMemory)
         {
-            db.SegUsuario.Add(new SegUsuario
+            await db.Database.OpenConnectionAsync();
+        }
+        try
+        {
+            if (!await db.SegUsuario.AnyAsync(u => u.id == 1))
             {
-                id = 1,
-                strNombre = "admin",
-                strPWD = hasher.HashPassword("Admin123!"),
-                strCorreoElectronico = "admin@edelmeza.com",
-                dteFechaRegistro = DateTime.UtcNow,
-                bln2FAHabilitado = false
-            });
+                db.SegUsuario.Add(new SegUsuario
+                {
+                    id = 1,
+                    strNombre = "admin",
+                    strPWD = hasher.HashPassword("Admin123!"),
+                    strCorreoElectronico = "admin@edelmeza.com",
+                    dteFechaRegistro = DateTime.UtcNow,
+                    bln2FAHabilitado = false
+                });
+                await SaveWithIdentityAsync("SegUsuario");
+            }
+
+            if (!await db.CliCliente.AnyAsync(c => c.id == 1))
+            {
+                db.CliCliente.Add(new CliCliente
+                {
+                    id = 1,
+                    strNombreCliente = "Cliente Demo",
+                    strDireccionCliente = "Av. Demo 123",
+                    strCorreoElectronico = "cliente@demo.com",
+                    strNumeroTelefono = "5551234567"
+                });
+                await SaveWithIdentityAsync("CliCliente");
+            }
+
+            if (!await db.ProProducto.AnyAsync(p => p.id == 1))
+            {
+                db.ProProducto.Add(new ProProducto
+                {
+                    id = 1,
+                    strNombreProducto = "Coca Cola 600ml",
+                    strURLImagen = "https://imagen.com/coca.png",
+                    strDescripcion = "Refresco",
+                    intNumeroExistencia = 100,
+                    decPrecio = 18.5m,
+                    strCreadoPorUsuario = "admin"
+                });
+                await SaveWithIdentityAsync("ProProducto");
+            }
+
+            if (!await db.VenCatEstado.AnyAsync(e => e.id == 1))
+            {
+                db.VenCatEstado.Add(new VenCatEstado
+                {
+                    id = 1,
+                    strValor = "ACTIVA",
+                    strDescripcion = "Venta activa"
+                });
+                await SaveWithIdentityAsync("VenCatEstado");
+            }
+
+            return Results.Ok(new { });
+        }
+        finally
+        {
+            if (!useInMemory)
+            {
+                await db.Database.CloseConnectionAsync();
+            }
         }
 
-        if (!await db.CliCliente.AnyAsync(c => c.id == 1))
+        async Task SaveWithIdentityAsync(string table)
         {
-            db.CliCliente.Add(new CliCliente
+            if (!useInMemory)
             {
-                id = 1,
-                strNombreCliente = "Cliente Demo",
-                strDireccionCliente = "Av. Demo 123",
-                strCorreoElectronico = "cliente@demo.com",
-                strNumeroTelefono = "5551234567"
-            });
-        }
-
-        if (!await db.ProProducto.AnyAsync(p => p.id == 1))
-        {
-            db.ProProducto.Add(new ProProducto
+                await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {table} ON");
+            }
+            try
             {
-                id = 1,
-                strNombreProducto = "Coca Cola 600ml",
-                strURLImagen = "https://imagen.com/coca.png",
-                strDescripcion = "Refresco",
-                intNumeroExistencia = 100,
-                decPrecio = 18.5m,
-                strCreadoPorUsuario = "admin"
-            });
-        }
-
-        if (!await db.VenCatEstado.AnyAsync(e => e.id == 1))
-        {
-            db.VenCatEstado.Add(new VenCatEstado
+                await db.SaveChangesAsync();
+            }
+            finally
             {
-                id = 1,
-                strValor = "ACTIVA",
-                strDescripcion = "Venta activa"
-            });
+                if (!useInMemory)
+                {
+                    await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT {table} OFF");
+                }
+            }
         }
-
-        await db.SaveChangesAsync();
-        return Results.Ok(new { });
     });
 }
 

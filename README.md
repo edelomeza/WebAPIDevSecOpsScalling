@@ -19,7 +19,7 @@ Scalable REST API built with ASP.NET Core 10: JWT authentication, Argon2id hashi
 | **Distributed Cache** | Key-value cache-aside on Redis (`StackExchangeRedis`), per-key TTLs (30–120s), invalidation on writes, in-memory fallback if Redis is down |
 | **Message Queues** | Choreographed sales saga with MassTransit (InMemory transport locally): 7 events, 4 consumers, flow pedido → stock → pago → factura with compensation |
 | **Metrics** | OpenTelemetry + Prometheus (`/metrics`): test coverage, mutation score, SonarCloud quality gate, P95 latency — visualized in a Grafana dashboard |
-| **QA Implementation** | 6 test suites (unit 600, integration 357, security 136, database, contract Pact, mutation Stryker), performance testing (NBomber), fuzzing (RESTler), SQL recovery tests (Testcontainers), quality gates enforced in CI |
+| **QA Implementation** | 6 test suites (unit 603, integration 357, security 136, database, contract Pact, mutation Stryker), performance testing (NBomber), fuzzing (RESTler), SQL recovery tests (Testcontainers), chaos engineering (Docker fault injection + nightly workflow), quality gates enforced in CI |
 
 ---
 
@@ -39,6 +39,7 @@ Scalable REST API built with ASP.NET Core 10: JWT authentication, Argon2id hashi
 | **Observability** | OpenTelemetry + Prometheus exporter + Grafana |
 | **Validation** | FluentValidation |
 | **Testing** | xUnit, Moq, FluentAssertions, FsCheck, Testcontainers, Pact, Stryker.NET, NBomber, RESTler |
+| **Chaos Engineering** | Docker Compose + PowerShell fault injection, `tc netem` latency (Linux) |
 | **Static Analysis** | SonarAnalyzer, SonarCloud, Semgrep |
 | **Container Security** | Trivy, Dockle, Cosign (keyless signing) |
 
@@ -147,6 +148,35 @@ Distributed key-value cache-aside on Redis via `IDistributedCache`:
 | `cache:empleado:{id}` | 60s | Employee by ID |
 | `cache:tipo-empleado:{id}` / `cache:tipo-empleado:list` | 120s | Employee type catalog |
 | `cache:usuario:{id}` | 60s | User by ID (password never cached) |
+
+**Failover behavior:** the StackExchange.Redis multiplexer is tuned (`AbortOnConnectFail=false`, `AsyncTimeout=500ms`, `ConnectTimeout=2000ms`, exponential reconnect) so that when Redis goes down the fallback to `IMemoryCache` kicks in within ~500ms — the API keeps responding under sustained load during an outage (validated under NBomber load in the chaos experiments). `/health` reports 503 while Redis is down; `/health/ready` (DB only) stays 200.
+
+---
+
+## Chaos Engineering
+
+Fault injection against the live stack (API + Redis + SQL Server via `ChaosTest/docker-compose.chaos.yml`) while NBomber generates traffic, validating graceful degradation at runtime. Orchestrated by `ChaosTest/run-chaos.ps1` (exit codes: `0` = PASS, `1` = FAIL, `2` = suite error; JSON reports in `reports/`).
+
+| Experiment | Fault injected | Expected behavior | Verified |
+|---|---|---|---|
+| `redis-kill` | `docker kill` Redis | API keeps responding via the `IMemoryCache` fallback (`/health/ready` 200; `/health` 503 detects the outage) | ✅ PASS |
+| `sql-kill` | `docker kill` SQL Server | Circuit breaker opens; `/health/ready` returns controlled 503, requests fail gracefully (no hangs) | ✅ PASS |
+| `redis-latency` | 2s network latency on Redis (`tc netem`) | Timeouts trigger the fallback; API degrades gracefully | ✅ PASS* |
+
+\* Latency injection requires a Linux host (`tc netem`); on Windows the step is marked `Skipped` with a warning (CI Ubuntu runs it for real).
+
+**Run locally:**
+
+```powershell
+docker compose -f ChaosTest/docker-compose.chaos.yml up -d --build   # API + Redis + SQL stack
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-kill.json
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/sql-kill.json
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-latency.json
+```
+
+**Nightly workflow** — `.github/workflows/chaos-nightly.yml` (cron 02:30 UTC + manual dispatch): starts the stack, seeds `/provider-states`, runs the 3 experiments, fails the job red on any FAIL, and uploads `reports/` as an artifact. Load scenarios run with relaxed rate limits and reduced concurrency (configurable via `PERF_LOGIN_USERS`, `PERF_PRODUCTO_USERS`, `PERF_VENTA_USERS`, `PERF_MIXTO_USERS`).
+
+Details (runner, JSON experiment format, fault catalog) in [ChaosTest/README.md](ChaosTest/README.md).
 
 ---
 
@@ -304,9 +334,15 @@ WebAPIDevSecOps/
 ├── ContractTest/                # Contract tests (Pact)
 ├── MutationTest/                # Mutation testing (Stryker.NET)
 ├── PerformanceTest/             # Performance tests (NBomber)
+├── ChaosTest/                   # Chaos engineering: fault injection runner + experiments
+│   ├── run-chaos.ps1            # Experiment orchestrator (exit 0/1/2, JSON reports)
+│   ├── docker-compose.chaos.yml # Chaos stack: API + Redis (iproute2) + SQL Server 2022
+│   ├── Helpers/FaultInjector.psm1  # Docker fault injection (kill/start/pause/latency)
+│   └── Experiments/             # redis-kill, sql-kill, redis-latency (JSON)
 ├── fuzzing/                     # RESTler fuzzing config + helpers
 ├── deploy/                      # Docker Compose local + Grafana dashboard
 ├── scripts/                     # Coverage check, quality metrics collector, hardening report summary
+├── .github/workflows/           # CI/CD + chaos-nightly workflows
 └── .semgrep/                    # Custom Semgrep rules
 ```
 
@@ -318,11 +354,12 @@ WebAPIDevSecOps/
 push → build-and-test → docker-build (+Cosign) → dockle → sonarcloud
      → database-test → mutation-test → contract-test → semgrep
      → fuzz (RESTler) → DAST (ZAP) ×2 → hardening-report → PR Quality Gate
+cron (02:30 UTC) → chaos-nightly (Redis/SQL kill + latency experiments)
 ```
 
 | Stage | Tool | What it checks |
 |---|---|---|
-| **Build & Test** | xUnit + Moq + FluentAssertions | Unit (600), integration (357), security (136) tests, vulnerable dependencies, SBOM (CycloneDX) |
+| **Build & Test** | xUnit + Moq + FluentAssertions | Unit (603), integration (357), security (136) tests, vulnerable dependencies, SBOM (CycloneDX) |
 | **Docker Build** | Docker + Cosign | Build and push image, keyless sign, verify signature, Trivy scan (HIGH/CRITICAL blocks) |
 | **Container Lint** | Dockle | Dockerfile/container best practices |
 | **SAST** | SonarCloud + Semgrep | Static analysis + custom rules; coverage threshold ≥ 45% |
@@ -332,6 +369,7 @@ push → build-and-test → docker-build (+Cosign) → dockle → sonarcloud
 | **Fuzzing** | RESTler | Automated API fuzzing from OpenAPI spec |
 | **DAST** | OWASP ZAP | Dynamic attacks using OpenAPI spec (push + PR) |
 | **Hardening Report** | Trivy + Dockle + ZAP + Semgrep | Downloads all scan reports (those produced per event) and consolidates them into a single `hardening-report` artifact with a findings summary |
+| **Chaos Nightly** | Docker Compose + PowerShell fault injection | Cron job (02:30 UTC): kills Redis/SQL, injects latency under NBomber load, verifies graceful degradation, uploads `reports/` artifact, fails red on any FAIL |
 | **PR Quality Gate** | GitHub Script | Verifies build-and-test + semgrep, comments results on PR |
 
 ---
@@ -360,6 +398,12 @@ dotnet stryker --project WebAPIDevSecOps/WebAPIDevSecOps.csproj
 # Performance tests
 dotnet run --project PerformanceTest/PerformanceTest.csproj
 
+# Chaos experiments (requires Docker stack first)
+docker compose -f ChaosTest/docker-compose.chaos.yml up -d --build
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-kill.json
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/sql-kill.json
+powershell -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-latency.json
+
 # All tests
 dotnet test UnitTest/UnitTest.csproj
 dotnet test IntegrationTest/IntegrationTest.csproj
@@ -371,6 +415,7 @@ Additional QA techniques:
 - **Race conditions**: parallel writes tested (5 concurrent sales → only 1 succeeds)
 - **Recovery**: Redis failure fallback, circuit breaker open/half-open/closed tests
 - **Database recovery**: SQL Server stopped → `/health/ready` returns 503, restart → recovers to 200 (Testcontainers, requires Docker)
+- **Chaos**: Redis/SQL killed under NBomber load → graceful degradation verified (fallback, circuit breaker, latency); nightly automated in `chaos-nightly`
 
 ---
 
@@ -384,6 +429,7 @@ Key sections in `appsettings.json`:
 | `UseInMemoryDatabase` | Use EF Core InMemory instead of SQL Server (dev/tests) |
 | `Jwt` | Key (min 32 bytes), Issuer, Audience |
 | `PasswordHashing` | MemorySize, Iterations, DegreeOfParallelism |
+| `RateLimiting` | Configurable permit limits (GlobalPermitLimit, LoginPermitLimit, Login2faVerifyPermitLimit, AdminPermitLimit) — relaxed in chaos/perf environments |
 | `Resilience` | Circuit breaker parameters |
 | `RequestTimeoutSeconds` | Global request timeout |
 | `Observability:ConsoleExport` | Gate for console OTel exporters (off by default) |

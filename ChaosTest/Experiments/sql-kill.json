@@ -1,0 +1,40 @@
+﻿{
+  "name": "sql-kill",
+  "description": "Matar SQL Server durante POST /api/v1/venta (carga NBomber): el circuit breaker (DbResilienceService) se abre tras MinimumThroughput fallos y los requests fallan gracefulmente (503 controlado, sin colgarse). Complemento caótico del paso 5.5 (recuperación tras caída de BD).",
+  "target": "sql",
+  "load": {
+    "command": "dotnet",
+    "args": [
+      "run",
+      "--project",
+      "PerformanceTest/PerformanceTest.csproj",
+      "-c",
+      "Release",
+      "--no-build"
+    ],
+    "warmupSeconds": 30,
+    "env": {
+      "PERF_API_BASE_URL": "http://localhost:8080",
+      "PERF_LOGIN_USER": "admin",
+      "PERF_LOGIN_PASSWORD": "Admin123!",
+      "PERF_LOGIN_USERS": "10",
+      "PERF_PRODUCTO_USERS": "20",
+      "PERF_VENTA_USERS": "10",
+      "PERF_MIXTO_USERS": "20"
+    }
+  },
+  "steps": [
+    {
+      "name": "matar sql server",
+      "action": "kill",
+      "verify": {
+        "method": "GET",
+        "url": "http://localhost:8080/health/ready",
+        "expectedStatus": 503
+      }
+    }
+  ],
+  "recovery": [
+    { "action": "start", "target": "sql" }
+  ]
+}

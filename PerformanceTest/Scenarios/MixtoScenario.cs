@@ -61,7 +61,7 @@ namespace PerformanceTest.Scenarios
                     _bearerToken = await AuthHelper.LoginAndGetTokenAsync(client, loginUrl, user, password);
                     Console.WriteLine($"[MixtoScenario] Token JWT obtenido para {user}");
                 }),
-                Simulation.KeepConstant(Users, Duration));
+                Simulation.KeepConstant(Env.Int("PERF_MIXTO_USERS", Users), Duration));
         }
     }
 }

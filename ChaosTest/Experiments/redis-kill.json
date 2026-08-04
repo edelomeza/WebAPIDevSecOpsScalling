@@ -1,0 +1,40 @@
+﻿{
+  "name": "redis-kill",
+  "description": "Matar Redis durante carga NBomber: la API sigue respondiendo con el fallback a IMemoryCache (paso 1.13: try-catch en LoginService/TokenBlacklistService). /health/ready (solo BD) debe seguir en 200; /health cae a 503 porque su check de Redis detecta el fallo (detección correcta).",
+  "target": "redis",
+  "load": {
+    "command": "dotnet",
+    "args": [
+      "run",
+      "--project",
+      "PerformanceTest/PerformanceTest.csproj",
+      "-c",
+      "Release",
+      "--no-build"
+    ],
+    "warmupSeconds": 30,
+    "env": {
+      "PERF_API_BASE_URL": "http://localhost:8080",
+      "PERF_LOGIN_USER": "admin",
+      "PERF_LOGIN_PASSWORD": "Admin123!",
+      "PERF_LOGIN_USERS": "10",
+      "PERF_PRODUCTO_USERS": "20",
+      "PERF_VENTA_USERS": "10",
+      "PERF_MIXTO_USERS": "20"
+    }
+  },
+  "steps": [
+    {
+      "name": "matar redis",
+      "action": "kill",
+      "verify": {
+        "method": "GET",
+        "url": "http://localhost:8080/health/ready",
+        "expectedStatus": 200
+      }
+    }
+  ],
+  "recovery": [
+    { "action": "start", "target": "redis" }
+  ]
+}

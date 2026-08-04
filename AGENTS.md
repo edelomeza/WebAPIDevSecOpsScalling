@@ -126,6 +126,21 @@ Full analysis in `agent.md`. Key knowledge not previously known, with evidence:
 - Testcontainers 4.13 `MsSqlContainer` publica un puerto host **aleatorio** y, tras `StopAsync`/`StartAsync`, re-pública en un **puerto nuevo** (el viejo muere) → la connection string de la app queda obsoleta y el health nunca recupera
 - Solución: `ContainerBuilder` genérico con `WithPortBinding(hostPort, 1433)` — **en v4 el orden es (hostPort, containerPort)**, invertido a v3 — el puerto fijo sí sobrevive al restart (verificado empíricamente)
 
+**Chaos nightly E2E (Fase 6, verificado en vivo)**
+- PowerShell 5.1: `Invoke-WebRequest` sin `-UseBasicParsing` usa el parser de IE y timeoutea en respuestas JSON → verify siempre status 0 (FAIL espurio); usarlo siempre en FaultInjector
+- NBomber **borra el contenido de su carpeta de reportes al arrancar** → no compartir carpeta con otros artefactos: caos en `reports/`, NBomber en `perf-reports/`
+- NBomber aborta la carga con "Stopping test early" si un escenario acumula demasiados fails → `Scenario.WithMaxFailCount(10M)` para que el experimento mida bajo carga real (los thresholds de carga ya son ruido para el veredicto de caos)
+- StackExchange.Redis con defaults mata el fallback: con el servidor muerto cada op espera `asyncTimeout` (5s) mientras el multiplexer reencola (qs/async-ops crecen) → thread pool/cola saturadas y la API no acepta conexiones por >25s aunque el fallback a IMemoryCache exista. Fix en `Program.cs`: `ConfigurationOptions.Parse` + `AbortOnConnectFail=false`, `ConnectTimeout=2000`, `SyncTimeout=1000`, `AsyncTimeout=500`, `ConnectRetry=1`, `ReconnectRetryPolicy=ExponentialRetry(5000)` → el fallback actúa en ≤500ms y la API sigue respondiendo 200 con Redis muerto bajo carga
+- `Stop-Process` sobre `dotnet run` deja el árbol hijo (la app) vivo → kill por árbol: `taskkill /PID /T /F` en Windows, `pkill -TERM -P` en Linux (Stop-LoadTree)
+- Cuidado: los nodos MSBuild persistentes (`dotnet ... MSBuild.dll /nodemod...`) parecen procesos huérfanos pero son inocuos; no matarlos salvo limpieza real
+- Concurrencia NBomber por escenario configurable vía env `PERF_LOGIN_USERS`/`PERF_PRODUCTO_USERS`/`PERF_VENTA_USERS`/`PERF_MIXTO_USERS` (defaults intactos) — los JSON de caos relajan a 10/20/10/20 porque Docker Desktop (NAT + CPU limitada) satura con los defaults (Argon2id a 42 verifies/s colapsa el contenedor)
+- **Diagnóstico de "verify FAIL status 0" (metodología validada en vivo)**: el mismo síntoma tiene 4 causas distintas → discriminar antes de tocar código: (1) sondeo manual desde el host con `-UseBasicParsing` y timeout corto — si responde 200 y el runner no, es el parser de IE; (2) grupo control: misma carga **sin** el fallo — si pasa, el fallo es real del SUT, no del rig; (3) logs de la API como prueba de vida (los WARN de fallback demuestran que la app procesa aunque el verify falle → hambruna de recursos, no caída); (4) `Get-Process dotnet` / revisar cargas apiladas de runs previos (cada carga huérfana acumula rps). Solo tras descartar las 4 se investiga el SUT
+- **Las imágenes `mcr.microsoft.com/dotnet/aspnet:10.0` NO incluyen wget/curl** (verificado: `command -v curl || command -v wget` vacío): una sonda HTTP vía `docker exec` da falso negativo 12/12 dentro del contenedor mientras el host responde 12/12 — verificar la herramienta antes de sondear desde dentro, o sondear siempre desde el host
+- **Argon2id es el cuello de botella CPU de los escenarios de carga**: la firma de saturación es `[TIMING] VerifyPassword: 7456ms` (vs ~100-500ms normal) — ~42 verifies/s (cada uno ~64MB de memoria Argon2) colapsan un contenedor de 2 vCPU (Docker Desktop) y la API deja de aceptar conexiones; los escenarios de login son los más frágiles bajo caos → concurrency de login baja en entornos restringidos y arrancar la suite de perf con un solo login compartido (`WithInit`) en vez de logins por iteración
+- **Firma del reconnection storm de StackExchange.Redis**: `RedisTimeoutException: Timeout awaiting response ... timeout is 500ms, command=UNLINK/HMGET, qs: N, async-ops: N, mgr: 10 of 10 available` — significa que las ops se reencolan esperando reconexión; reconocerla por la firma, no por el mensaje genérico. Ojo: `healthChecks.AddRedis()` crea su **propio multiplexer con defaults** (sin el tuning de `Program.cs`) → `/health` puede comportarse distinto a la app durante la caída (tiempos de detección diferentes)
+- Seed `/provider-states` en SQL Server real: requiere `SET IDENTITY_INSERT` on/off por tabla + conexión única abierta (sin eso → error 544/500); es idempotente (2ª ejecución también 200); `docker compose down -v` destruye la BD → reseed obligatorio en cada arranque del stack
+- Exit codes del runner de caos (`run-chaos.ps1`): 0 = PASS / 1 = FAIL / 2 = error de suite (JSON inválido, experimento inexistente); verify con retry 5×5s (ventana ~50s) para absorber blips transitorios de Docker Desktop; el veredicto del experimento NO depende del exit code de la carga NBomber
+
 **Rules for the future**
 1. Verify empirically before writing (metric names, report formats, config semantics)
 2. Measure real runtimes before setting CI timeouts; set coverage thresholds from real numbers
@@ -136,6 +151,7 @@ Full analysis in `agent.md`. Key knowledge not previously known, with evidence:
 7. Tools needing a real socket (Pact FFI): real process + free port + cleanup in `finally`
 8. Scripts: explicit fallbacks (0/false + WARN), `mktemp`/`mv` atomicity, `LC_NUMERIC=C`
 9. Defensive .gitignore: local run artifacts (`reports/`, `StrykerOutput/`) in root, not nested tool-generated ones
+10. Verify FAIL con status 0: discriminar rig vs SUT con grupo control, logs como prueba de vida y revisión de procesos apilados antes de tocar código (ver metodología en Fase 6)
 
 ## Dependabot
 

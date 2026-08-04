@@ -29,10 +29,10 @@ var specs = new[]
 try
 {
     var result = NBomberRunner
-        .RegisterScenarios(specs.Select(s => s.Props).ToArray())
+        .RegisterScenarios(specs.Select(s => Scenario.WithMaxFailCount(s.Props, 10_000_000)).ToArray())
         .WithTestSuite("performance")
         .WithTestName("fase4-suite")
-        .WithReportFolder("reports")
+        .WithReportFolder("perf-reports")
         .WithReportFormats(ReportFormat.Html, ReportFormat.Txt, ReportFormat.Md)
         .Run();
 

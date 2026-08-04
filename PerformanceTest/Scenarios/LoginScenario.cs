@@ -27,7 +27,7 @@ namespace PerformanceTest.Scenarios
 
                     return await Http.Send(client, request);
                 }),
-                Simulation.RampingConstant(MaxUsers, Duration));
+                Simulation.RampingConstant(Env.Int("PERF_LOGIN_USERS", MaxUsers), Duration));
         }
     }
 }

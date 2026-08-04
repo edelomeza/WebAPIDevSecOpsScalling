@@ -1,0 +1,115 @@
+name: Chaos Nightly
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "10.0.x"
+
+permissions:
+  contents: read
+
+jobs:
+  chaos-nightly:
+    name: Chaos experiments (Redis/SQL kill + latency)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build Release
+        run: dotnet build -c Release --no-restore
+
+      - name: Start chaos stack
+        run: docker compose -f ChaosTest/docker-compose.chaos.yml up -d --build
+
+      - name: Wait for API ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; then
+              echo "API ready (intento $i)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::API no respondió en 600s"
+          docker compose -f ChaosTest/docker-compose.chaos.yml ps
+          exit 1
+
+      - name: Seed provider states
+        run: |
+          curl -sf -X POST http://localhost:8080/provider-states \
+            || { echo "::error::POST /provider-states falló"; exit 1; }
+
+      - name: Experiment redis-kill
+        id: exp_redis_kill
+        run: |
+          set +e
+          pwsh -NoLogo -NoProfile -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-kill.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Experiment sql-kill
+        id: exp_sql_kill
+        run: |
+          set +e
+          pwsh -NoLogo -NoProfile -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/sql-kill.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Experiment redis-latency
+        id: exp_redis_latency
+        run: |
+          set +e
+          pwsh -NoLogo -NoProfile -File ChaosTest/run-chaos.ps1 -Experiment ChaosTest/Experiments/redis-latency.json
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Verdict
+        run: |
+          redis_kill=${{ steps.exp_redis_kill.outputs.exit_code }}
+          sql_kill=${{ steps.exp_sql_kill.outputs.exit_code }}
+          redis_latency=${{ steps.exp_redis_latency.outputs.exit_code }}
+          echo "redis-kill=$redis_kill sql-kill=$sql_kill redis-latency=$redis_latency (0=PASS 1=FAIL 2=suite error)"
+          echo "### Chaos Nightly — Resultado" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Experimento | Exit code | Veredicto |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| redis-kill | $redis_kill | $([ "$redis_kill" = "0" ] && echo PASS || echo FAIL) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| sql-kill | $sql_kill | $([ "$sql_kill" = "0" ] && echo PASS || echo FAIL) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| redis-latency | $redis_latency | $([ "$redis_latency" = "0" ] && echo PASS || echo FAIL) |" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          for c in "$redis_kill" "$sql_kill" "$redis_latency"; do
+            if [ "$c" != "0" ]; then status=1; fi
+          done
+          if [ $status -eq 0 ]; then
+            echo "Chaos PASS"
+          else
+            echo "::error::Chaos FAILED — revisar reports/chaos-*.json en el artifact"
+            exit 1
+          fi
+
+      - name: Upload chaos reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chaos-report
+          path: |
+            reports/chaos-*.json
+            reports/load-*.log
+          if-no-files-found: error
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f ChaosTest/docker-compose.chaos.yml down -v --remove-orphans

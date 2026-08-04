@@ -33,7 +33,7 @@ namespace PerformanceTest.Scenarios
                     _bearerToken = await AuthHelper.LoginAndGetTokenAsync(client, loginUrl, user, password);
                     Console.WriteLine($"[ProductoScenario] Token JWT obtenido para {user}");
                 }),
-                Simulation.KeepConstant(Users, Duration));
+                Simulation.KeepConstant(Env.Int("PERF_PRODUCTO_USERS", Users), Duration));
         }
     }
 }

@@ -68,6 +68,7 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.AddAspNetCoreInstrumentation();
         tracing.AddHttpClientInstrumentation();
+        tracing.AddEntityFrameworkCoreInstrumentation();
         if (enableConsoleExport)
             tracing.AddConsoleExporter();
     });

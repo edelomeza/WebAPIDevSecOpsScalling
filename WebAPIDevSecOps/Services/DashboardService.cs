@@ -1,3 +1,5 @@
+using Amazon.SQS;
+using Amazon.SQS.Model;
 using Microsoft.EntityFrameworkCore;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
@@ -10,11 +12,15 @@ namespace WebAPIDevSecOps.Services
     {
         private readonly AppDbContext _context;
         private readonly ILogger<DashboardService> _logger;
+        private readonly IAmazonSQS? _sqs;
+        private readonly IConfiguration? _configuration;
 
-        public DashboardService(AppDbContext context, ILogger<DashboardService> logger)
+        public DashboardService(AppDbContext context, ILogger<DashboardService> logger, IAmazonSQS? amazonSqs = null, IConfiguration? configuration = null)
         {
             _context = context;
             _logger = logger;
+            _sqs = amazonSqs;
+            _configuration = configuration;
         }
 
         public async Task<DashboardDto> GetDashboardAsync()
@@ -45,7 +51,7 @@ namespace WebAPIDevSecOps.Services
                     .Where(p => p.strEstadoSaga == "Facturado")
                     .Sum(p => p.decTotal),
                 lstPedidosPorEstado = pedidosPorEstado,
-                dctProfundidadColas = GetQueueDepth(),
+                dctProfundidadColas = await GetQueueDepthAsync(),
             };
 
             return dashboard;
@@ -163,12 +169,56 @@ namespace WebAPIDevSecOps.Services
             };
         }
 
-        private Dictionary<string, int> GetQueueDepth()
+        private async Task<Dictionary<string, int>> GetQueueDepthAsync()
         {
-            _logger.LogWarning(
-                "Profundidad de colas no disponible: el transporte actual es MassTransit InMemory. " +
-                "Con el transporte AmazonSQS (paso 2.11) se consultará ApproximateNumberOfMessages por cola.");
-            return new Dictionary<string, int>();
+            var transport = _configuration?.GetValue<string>("Transport");
+            if (_sqs == null || !string.Equals(transport, "SQS", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Profundidad de colas no disponible: el transporte actual es MassTransit InMemory. " +
+                    "Con el transporte AmazonSQS (paso 2.11) se consultará ApproximateNumberOfMessages por cola.");
+                return new Dictionary<string, int>();
+            }
+
+            var queueNames = new[] { "pedidos.fifo", "pedidos-pago.fifo", "pedidos-factura.fifo", "pedidos-dlq.fifo" };
+            var result = new Dictionary<string, int>();
+
+            foreach (var queueName in queueNames)
+            {
+                try
+                {
+                    string queueUrl;
+                    try
+                    {
+                        var urlResp = await _sqs.GetQueueUrlAsync(queueName);
+                        queueUrl = urlResp.QueueUrl;
+                    }
+                    catch (QueueDoesNotExistException)
+                    {
+                        var prefix = queueName.Split('.')[0];
+                        var listResp = await _sqs.ListQueuesAsync(prefix);
+                        queueUrl = listResp.QueueUrls.FirstOrDefault(u => u.EndsWith(queueName, StringComparison.Ordinal) || u.Contains(queueName, StringComparison.Ordinal))
+                            ?? throw new QueueDoesNotExistException($"Queue {queueName} not found");
+                    }
+
+                    var attrResp = await _sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+                    {
+                        QueueUrl = queueUrl,
+                        AttributeNames = new List<string> { "ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible" }
+                    });
+
+                    var visible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessages", out var v) && int.TryParse(v, out var iv) ? iv : 0;
+                    var notVisible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessagesNotVisible", out var v2) && int.TryParse(v2, out var iv2) ? iv2 : 0;
+                    result[queueName] = visible + notVisible;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error consultando cola SQS {Queue}", queueName);
+                    result[queueName] = 0;
+                }
+            }
+
+            return result;
         }
     }
 }

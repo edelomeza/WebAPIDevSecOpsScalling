@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
+    restart: unless-stopped
+    # Efimero sin volumen - fallback InMemory en Program.cs:323-341 si cae
+
+  api:
+    image: edelomeza/webapidevsecops-scalling:${TAG:-latest}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: /ecs/${STACK_NAME:-webapidevsecops-prod}
+        awslogs-region: ${AWS_REGION:-us-east-1}
+        awslogs-create-group: "true"
+        awslogs-stream: api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      # Transporte SQS via IAM Role (1.2/1.4)
+      - Transport=SQS
+      - Sqs__Region=${AWS_REGION:-us-east-1}
+      - UseInMemoryDatabase=false
+      - ConnectionStrings__DefaultConnection=Server=${RDS_ADDRESS},1433;Database=${DB_NAME:-WebAPIDevSecOps};User Id=${DB_USER};Password=${DB_PASSWORD};Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;Min Pool Size=2;Max Pool Size=200;Connection Lifetime=300;
+      - ConnectionStrings__Redis=redis:6379
+      # Secrets inyectados desde GH Secrets (NoEcho) - no hardcode
+      - Jwt__Key=${JWT_KEY_PROD}
+      - Jwt__Issuer=${JWT_ISSUER:-http://${ALB_DNS:-localhost}}
+      - Jwt__Audience=${JWT_AUDIENCE:-http://${ALB_DNS:-localhost}}
+      - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN}
+      # RateLimiting relajado solo via env (Production.json mantiene limites estrictos)
+      - RateLimiting__GlobalPermitLimit=5000
+      - RateLimiting__LoginPermitLimit=5
+      - RateLimiting__Login2faVerifyPermitLimit=10
+      - RateLimiting__AdminPermitLimit=1000
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

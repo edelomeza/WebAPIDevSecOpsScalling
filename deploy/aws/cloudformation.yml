@@ -1,0 +1,404 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: WebAPIDevSecOpsScalling - Infra 14d (ALB dual 80/443, sin NAT, CORS param, Delete, Tag sha, NoEcho)
+
+Parameters:
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag Docker edelomeza/webapidevsecops-scalling (sha del commit)
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: SQL Server sa password (inyectado desde GH Secrets, NoEcho)
+  CorsAllowedOrigin:
+    Type: String
+    Default: ""
+    Description: Origen frontend externo (Vercel/Netlify) para CORS_ALLOWED_ORIGIN
+  AcmCertificateArn:
+    Type: String
+    Default: ""
+    Description: ARN certificado ACM para Listener 443 (vacio deshabilita 443)
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+  DBUsername:
+    Type: String
+    Default: sa
+  DBName:
+    Type: String
+    Default: WebAPIDevSecOps
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AmiId: ami-0fc5d935ebf8bc3bc  # AL2023 x86_64 us-east-1 (actualizar via SSM si expira)
+
+Conditions:
+  HasCertificate: !Not [!Equals [!Ref AcmCertificateArn, ""]]
+
+Resources:
+  # --- Red ---
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-vpc" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-igw" }]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetPublicA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public-a" }]
+
+  SubnetPublicB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public-b" }]
+
+  SubnetPrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-a" }]
+
+  SubnetPrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-b" }]
+
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-rt-public" }]
+
+  RoutePublic:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssocPublicA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublicA
+      RouteTableId: !Ref RouteTablePublic
+
+  SubnetRouteTableAssocPublicB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetPublicB
+      RouteTableId: !Ref RouteTablePublic
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds: [!Ref SubnetPrivateA, !Ref SubnetPrivateB]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-db-subnet" }]
+
+  # --- Security Groups ---
+  SGALB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB SG - 80/443 desde 0.0.0.0/0
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP web/movil
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS prod ACM
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-alb" }]
+
+  SGEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 SG - 8080 solo desde SGALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref SGALB
+          Description: ALB -> EC2 8080
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-ec2" }]
+
+  SGRDS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS SG - 1433 solo desde SGEC2
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          SourceSecurityGroupId: !Ref SGEC2
+          Description: EC2 -> RDS 1433
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-rds" }]
+
+  # --- IAM ---
+  IAMRoleEC2:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-role-ec2" }]
+
+  IAMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref IAMRoleEC2]
+
+  # --- RDS (desechable, Delete) ---
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub "${AWS::StackName}-sql"
+      Engine: sqlserver-ex
+      EngineVersion: "16.00.4095.4.v1"
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      StorageType: gp2
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      VPCSecurityGroups: [!GetAtt SGRDS.GroupId]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      StorageEncrypted: false
+      CopyTagsToSnapshot: false
+      BackupRetentionPeriod: 0
+      DeletionProtection: false
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-rds" }]
+
+  # --- SQS FIFO x4 ---
+  QueuePedidos:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-pedidos.fifo"
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 60
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-pedidos" }]
+
+  QueuePedidosPago:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-pedidos-pago.fifo"
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt QueuePedidosDLQ.Arn
+        maxReceiveCount: 3
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-pedidos-pago" }]
+
+  QueuePedidosFactura:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-pedidos-factura.fifo"
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt QueuePedidosDLQ.Arn
+        maxReceiveCount: 3
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-pedidos-factura" }]
+
+  QueuePedidosDLQ:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-pedidos-dlq.fifo"
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      MessageRetentionPeriod: 1209600
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-dlq" }]
+
+  # --- CloudWatch Logs ---
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}"
+      RetentionInDays: 14
+
+  # --- EC2 ---
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    DependsOn: [VPCGatewayAttachment, RDSInstance]
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AmiId]
+      InstanceType: t3.micro
+      SubnetId: !Ref SubnetPublicA
+      SecurityGroupIds: [!Ref SGEC2]
+      IamInstanceProfile: !Ref IAMInstanceProfile
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-ec2" }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+          dnf update -y
+          dnf install -y docker aws-cli
+          systemctl enable --now docker
+          usermod -aG docker ec2-user
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          # awslogs driver
+          mkdir -p /etc/docker
+          cat >/etc/docker/daemon.json <<'JSON'
+          { "log-driver": "awslogs", "log-opts": { "awslogs-region": "${AWS::Region}", "awslogs-group": "${LogGroup}", "awslogs-create-group": "true" } }
+          JSON
+          systemctl restart docker
+          # pull image trazable por sha
+          docker pull edelomeza/webapidevsecops-scalling:${ImageTag} || true
+          echo "EC2 UserData done Tag=${ImageTag} CORS=${CorsAllowedOrigin}" | logger -t user-data
+
+  # --- ALB ---
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Name: !Sub "${AWS::StackName}-alb"
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref SubnetPublicA, !Ref SubnetPublicB]
+      SecurityGroups: [!Ref SGALB]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-alb" }]
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Name: !Sub "${AWS::StackName}-tg"
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets: [{ Id: !Ref EC2Instance, Port: 8080 }]
+      HealthCheckPath: /health/ready
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "8080"
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher: { HttpCode: "200" }
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-tg" }]
+
+  Listener80:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  Listener443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+      Certificates: [{ CertificateArn: !Ref AcmCertificateArn }]
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  ALBDNS:
+    Description: DNS publico para API_BASE_URL y health
+    Value: !GetAtt ALB.DNSName
+    Export: { Name: !Sub "${AWS::StackName}-ALBDNS" }
+  ALBUrl80:
+    Description: URL http healthcheck
+    Value: !Sub "http://${ALB.DNSName}/health/ready"
+  ALBUrl443:
+    Condition: HasCertificate
+    Description: URL https healthcheck
+    Value: !Sub "https://${ALB.DNSName}/health/ready"
+  EC2PublicIP:
+    Description: IP publica temporal EC2 (no usar como base, usar ALB DNS)
+    Value: !GetAtt EC2Instance.PublicIp
+  RDSAddress:
+    Description: Endpoint RDS desechable
+    Value: !GetAtt RDSInstance.Endpoint.Address
+  QueuePedidosUrl:
+    Value: !Ref QueuePedidos
+  QueuePedidosPagoUrl:
+    Value: !Ref QueuePedidosPago
+  QueuePedidosFacturaUrl:
+    Value: !Ref QueuePedidosFactura
+  QueueDLQUrl:
+    Value: !Ref QueuePedidosDLQ
+  LogGroupName:
+    Value: !Ref LogGroup
+  ImageTagUsed:
+    Value: !Ref ImageTag

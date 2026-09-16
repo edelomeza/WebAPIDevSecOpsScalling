@@ -23,6 +23,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
+using Amazon.SQS;
 using MassTransit;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
@@ -376,6 +377,16 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 builder.Services.AddScoped<ILogin2faService, Login2faService>();
 
+var transport = builder.Configuration.GetValue<string>("Transport");
+var sqsRegion = builder.Configuration.GetValue<string>("Sqs:Region") ?? "us-east-1";
+var useSqs = string.Equals(transport, "SQS", StringComparison.OrdinalIgnoreCase);
+
+if (useSqs)
+{
+    var regionEndpoint = Amazon.RegionEndpoint.GetBySystemName(sqsRegion);
+    builder.Services.AddSingleton<IAmazonSQS>(sp => new AmazonSQSClient(regionEndpoint));
+}
+
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<WebAPIDevSecOps.Consumers.StockValidatorConsumer>();
@@ -383,10 +394,21 @@ builder.Services.AddMassTransit(x =>
     x.AddConsumer<WebAPIDevSecOps.Consumers.FacturaConsumer>();
     x.AddConsumer<WebAPIDevSecOps.Consumers.CompensationConsumer>();
 
-    x.UsingInMemory((context, cfg) =>
+    if (useSqs)
     {
-        cfg.ConfigureEndpoints(context);
-    });
+        x.UsingAmazonSqs((context, cfg) =>
+        {
+            cfg.Host(sqsRegion, h => { });
+            cfg.ConfigureEndpoints(context);
+        });
+    }
+    else
+    {
+        x.UsingInMemory((context, cfg) =>
+        {
+            cfg.ConfigureEndpoints(context);
+        });
+    }
 });
 
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);

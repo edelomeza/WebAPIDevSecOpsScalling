@@ -119,7 +119,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}
+            ${{ vars.REGISTRY_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=ref,event=branch
@@ -131,7 +131,7 @@ jobs:
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
-          tags: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+          tags: ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -141,7 +141,7 @@ jobs:
 
       - name: Sign image with Cosign (Keyless)
         run: |
-          IMAGE_REF="${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}"
+          IMAGE_REF="${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}"
           cosign sign \
             --yes \
             --oidc-issuer "https://token.actions.githubusercontent.com" \
@@ -150,7 +150,7 @@ jobs:
 
       - name: Verify signature
         run: |
-          IMAGE_REF="${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}"
+          IMAGE_REF="${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}"
           cosign verify \
             --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yml" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
@@ -159,7 +159,7 @@ jobs:
       - name: Scan container with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+          image-ref: ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
@@ -188,7 +188,7 @@ jobs:
       - name: Scan image with Dockle
         uses: goodwithtech/dockle-action@v0.4.15
         with:
-          image: ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+          image: ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
           exit-code: '1'
           exit-level: HIGH
           format: json
@@ -451,7 +451,7 @@ jobs:
             -e Jwt__Issuer="https://localhost:7000" \
             -e Jwt__Audience="https://localhost:7000" \
             --name webapi-fuzz \
-            ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+            ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
 
       - name: Wait for API to be healthy
         run: |
@@ -585,7 +585,7 @@ jobs:
           cosign verify \
             --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/ci-cd.yml" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+            ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
 
       - name: Cleanup previous container
         run: docker rm -f webapi 2>/dev/null || true
@@ -600,7 +600,7 @@ jobs:
             -e Jwt__Issuer="https://localhost:7000" \
             -e Jwt__Audience="https://localhost:7000" \
             --name webapi \
-            ${{ vars.REGISTRY_IMAGE || 'edelomeza/webapidevsecops' }}:${{ github.sha }}
+            ${{ vars.REGISTRY_IMAGE }}:${{ github.sha }}
 
       - name: Wait for API to be healthy
         run: |

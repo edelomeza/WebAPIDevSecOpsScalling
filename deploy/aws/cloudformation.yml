@@ -27,7 +27,12 @@ Parameters:
     Default: sa
   DBName:
     Type: String
-    Default: WebAPIDevSecOps
+    Default: db45497
+    Description: Nombre catalogo BD (externa db45497 Hetzner)
+  ExternalDbHost:
+    Type: String
+    Default: 188.40.211.8
+    Description: Host/IP BD externa Hetzner (Only B, sin RDS)
 
 Mappings:
   RegionMap:
@@ -120,14 +125,7 @@ Resources:
       SubnetId: !Ref SubnetPublicB
       RouteTableId: !Ref RouteTablePublic
 
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      DBSubnetGroupDescription: Private subnets for RDS
-      SubnetIds: [!Ref SubnetPrivateA, !Ref SubnetPrivateB]
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-db-subnet" }]
+  # DBSubnetGroup eliminado en Only B (sin RDS externo 188.40.211.8/db45497)
 
   # --- Security Groups ---
   SGALB:
@@ -161,18 +159,7 @@ Resources:
           Description: ALB -> EC2 8080
       Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-ec2" }]
 
-  SGRDS:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: RDS SG - 1433 solo desde SGEC2
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 1433
-          ToPort: 1433
-          SourceSecurityGroupId: !Ref SGEC2
-          Description: EC2 -> RDS 1433
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-rds" }]
+  # SGRDS eliminado en Only B (sin RDS, trafico a 188.40.211.8 via egress 0.0.0.0/0)
 
   # --- IAM ---
   IAMRoleEC2:
@@ -195,30 +182,7 @@ Resources:
     Properties:
       Roles: [!Ref IAMRoleEC2]
 
-  # --- RDS (desechable, Delete) ---
-  RDSInstance:
-    Type: AWS::RDS::DBInstance
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      DBInstanceIdentifier: !Sub "${AWS::StackName}-sql"
-      Engine: sqlserver-ex
-      EngineVersion: "16.00.4095.4.v1"
-      DBInstanceClass: db.t3.micro
-      AllocatedStorage: 20
-      StorageType: gp2
-      MasterUsername: !Ref DBUsername
-      MasterUserPassword: !Ref DBPassword
-      DBName: !Ref DBName
-      VPCSecurityGroups: [!GetAtt SGRDS.GroupId]
-      DBSubnetGroupName: !Ref DBSubnetGroup
-      MultiAZ: false
-      PubliclyAccessible: false
-      StorageEncrypted: false
-      CopyTagsToSnapshot: false
-      BackupRetentionPeriod: 0
-      DeletionProtection: false
-      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-rds" }]
+  # RDSInstance eliminado en Only B (sin RDS, DB externa 188.40.211.8/db45497)
 
   # --- SQS FIFO x4 ---
   QueuePedidos:
@@ -285,7 +249,7 @@ Resources:
     Type: AWS::EC2::Instance
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
-    DependsOn: [VPCGatewayAttachment, RDSInstance]
+    DependsOn: VPCGatewayAttachment
     Properties:
       ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AmiId]
       InstanceType: t3.micro
@@ -387,9 +351,12 @@ Outputs:
   EC2PublicIP:
     Description: IP publica temporal EC2 (no usar como base, usar ALB DNS)
     Value: !GetAtt EC2Instance.PublicIp
+  ExternalDbHostUsed:
+    Description: Host BD externa Only B (188.40.211.8/db45497)
+    Value: !Ref ExternalDbHost
   RDSAddress:
-    Description: Endpoint RDS desechable
-    Value: !GetAtt RDSInstance.Endpoint.Address
+    Description: Alias compatibilidad (externa)
+    Value: !Ref ExternalDbHost
   QueuePedidosUrl:
     Value: !Ref QueuePedidos
   QueuePedidosPagoUrl:

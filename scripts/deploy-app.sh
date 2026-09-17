@@ -30,10 +30,22 @@ if [[ -z "$ALBDNS" || "$ALBDNS" == "None" ]]; then
   exit 1
 fi
 
-RDS_ADDRESS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='RDSAddress'].OutputValue" --output text 2>/dev/null || echo "")
-if [[ -z "$RDS_ADDRESS" || "$RDS_ADDRESS" == "None" ]]; then
-  RDS_ADDRESS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[? contains(OutputKey,'RDS')].OutputValue" --output text 2>/dev/null || echo "external-sql")
+# Only B: priorizar RDS_ADDRESS inyectado (GH vars 188.40.211.8) sobre CFN
+if [[ -n "${RDS_ADDRESS:-}" && "$RDS_ADDRESS" != "None" ]]; then
+  echo "[deploy-app] Usando RDS_ADDRESS inyectado $RDS_ADDRESS (vars.RDS_ADDRESS)"
+else
+  RDS_ADDRESS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='ExternalDbHostUsed'].OutputValue" --output text 2>/dev/null || echo "")
+  if [[ -z "$RDS_ADDRESS" || "$RDS_ADDRESS" == "None" ]]; then
+    RDS_ADDRESS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='RDSAddress'].OutputValue" --output text 2>/dev/null || echo "")
+  fi
+  if [[ -z "$RDS_ADDRESS" || "$RDS_ADDRESS" == "None" ]]; then
+    RDS_ADDRESS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[? contains(OutputKey,'RDS')].OutputValue" --output text 2>/dev/null || echo "external-sql")
+  fi
 fi
+# Auto SKIP_MIGRATION para externa 188.40.211.8
+SKIP_MIGRATION="${SKIP_MIGRATION:-}"
+if [[ "$RDS_ADDRESS" == "188.40.211.8" ]]; then SKIP_MIGRATION="true"; fi
+DB_NAME="${DB_NAME:-db45497}"
 
 # EC2 InstanceId via tag cloudformation stack-name (SSM Zero Trust, sin 22/pem)
 EC2_ID=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || true)
@@ -75,7 +87,7 @@ ssm_run "crear docker-compose.aws.yml" "echo $COMPOSE_B64 | base64 -d > /home/ec
 
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS && cd /home/ec2-user && docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS && cd /home/ec2-user && docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"

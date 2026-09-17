@@ -32,6 +32,9 @@ namespace UnitTest.Login
         private static LogoutController CreateController(string? token, Mock<IDistributedCache>? cacheMock = null)
         {
             cacheMock ??= new Mock<IDistributedCache>();
+            // Default: token not blacklisted -> GetAsync returns null (evita falso positivo por DefaultValue.Empty byte[0])
+            cacheMock.Setup(c => c.GetAsync(It.Is<string>(k => k.StartsWith("blacklist:")), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync((byte[]?)null);
             var service = new TokenBlacklistService(cacheMock.Object, Mock.Of<IMemoryCache>(), Mock.Of<ILogger<TokenBlacklistService>>());
             var controller = new LogoutController(service, NullLogger<LogoutController>.Instance);
             controller.ControllerContext = new ControllerContext

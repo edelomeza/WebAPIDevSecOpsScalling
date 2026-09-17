@@ -205,10 +205,32 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             Log.Error(context.Exception, "JWT authentication failed: {Message}", context.Exception.Message);
             return Task.CompletedTask;
         },
-        OnTokenValidated = context =>
+        OnTokenValidated = async context =>
         {
             Log.Information("JWT authenticated: {User}", context.Principal?.Identity?.Name);
-            return Task.CompletedTask;
+            try
+            {
+                var blacklistService = context.HttpContext.RequestServices.GetRequiredService<WebAPIDevSecOps.Interfaces.ITokenBlacklistService>();
+                var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                if (string.IsNullOrEmpty(jti))
+                    jti = context.Principal?.FindFirst("jti")?.Value;
+                if (string.IsNullOrEmpty(jti))
+                {
+                    Log.Warning("JWT without jti claim - rejecting");
+                    context.Fail("Token without jti is invalid.");
+                    return;
+                }
+                if (await blacklistService.IsBlacklistedAsync(jti))
+                {
+                    Log.Warning("JWT revoked (blacklisted jti): {Jti}", jti);
+                    context.Fail("Token has been revoked.");
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error al validar blacklist en OnTokenValidated");
+            }
         },
         OnChallenge = context =>
         {
@@ -528,40 +550,6 @@ app.UseMiddleware<WebAPIDevSecOps.Middleware.CorrelationIdMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.RequestTimeoutMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.AuditLoggingMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.ExceptionHandlingMiddleware>();
-
-app.Use(async (context, next) =>
-{
-    var token = context.Request.Headers["Authorization"]
-        .ToString()
-        .Replace("Bearer ", "");
-
-    if (!string.IsNullOrEmpty(token))
-    {
-        try
-        {
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var jwt = handler.ReadJwtToken(token);
-            var jti = jwt?.Id;
-            if (!string.IsNullOrEmpty(jti))
-            {
-                var blacklistService = context.RequestServices.GetRequiredService<WebAPIDevSecOps.Interfaces.ITokenBlacklistService>();
-                if (await blacklistService.IsBlacklistedAsync(jti))
-                {
-                    context.Response.StatusCode = 401;
-                    await context.Response.WriteAsync("Token inválido");
-                    return;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
-            logger.LogError(ex, "Error al validar blacklist de token");
-        }
-    }
-
-    await next();
-});
 
 app.UseMiddleware<WebAPIDevSecOps.Middleware.SecurityHeadersMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.CspNonceMiddleware>();

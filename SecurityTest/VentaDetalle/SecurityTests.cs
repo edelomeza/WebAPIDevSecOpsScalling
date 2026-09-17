@@ -100,7 +100,10 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
     public async Task Should_Reject_Tampered_Token()
     {
         var token = TokenHelper.GenerateValidToken(JwtKey, JwtIssuer, JwtAudience);
-        var tamperedToken = token[..^2] + "xx";
+        var parts = token.Split('.');
+        Assert.Equal(3, parts.Length);
+        parts[1] = (parts[1][0] == 'A' ? 'B' : 'A') + parts[1].Substring(1);
+        var tamperedToken = string.Join(".", parts);
 
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/ventadetalle");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tamperedToken);

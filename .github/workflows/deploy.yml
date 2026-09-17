@@ -39,6 +39,9 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           CORS_ALLOWED_ORIGIN: ${{ vars.CORS_ALLOWED_ORIGIN }}
           ACM_CERTIFICATE_ARN: ${{ vars.ACM_ARN }}
+          RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          EXTERNAL_DB_HOST: ${{ vars.RDS_ADDRESS }}
 
       - name: Deploy app via SSM (sin 22/pem)
         run: bash scripts/deploy-app.sh webapidevsecops-prod "${{ inputs.tag || github.sha }}"
@@ -48,6 +51,9 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           JWT_KEY_PROD: ${{ secrets.JWT_KEY_PROD }}
           CORS_ALLOWED_ORIGIN: ${{ vars.CORS_ALLOWED_ORIGIN }}
+          RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          SKIP_MIGRATION: "true"
 
       - name: Smoke health check
         run: |

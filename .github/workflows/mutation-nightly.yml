@@ -1,0 +1,56 @@
+name: Mutation Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-nightly
+  cancel-in-progress: false
+
+jobs:
+  mutation-nightly:
+    name: Mutation Test Nightly (Stryker 5.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Restore Stryker tool
+        working-directory: MutationTest
+        run: dotnet tool restore
+
+      - name: Run Mutation Testing
+        working-directory: MutationTest
+        run: dotnet tool run dotnet-stryker -- --config-file stryker-config.json
+
+      - name: Upload Mutation Report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-nightly-report
+          path: |
+            MutationTest/StrykerOutput/**/reports/**/*.html
+            MutationTest/StrykerOutput/**/reports/**/*.json
+          if-no-files-found: warn

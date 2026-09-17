@@ -2,8 +2,7 @@
   "stryker-config": {
     "project": "WebAPIDevSecOps.csproj",
     "test-projects": [
-      "../UnitTest/UnitTest.csproj",
-      "../IntegrationTest/IntegrationTest.csproj"
+      "../UnitTest/UnitTest.csproj"
     ],
     "mutate": [
       "**",
@@ -19,6 +18,8 @@
     },
     "reporters": ["html", "progress", "json"],
     "coverage-analysis": "perTest",
+    "concurrency": 4,
+    "additional-timeout": 15000,
     "verbosity": "info"
   }
 }

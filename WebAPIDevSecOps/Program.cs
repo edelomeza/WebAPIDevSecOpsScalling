@@ -479,7 +479,8 @@ else if (!builder.Environment.IsDevelopment())
     Log.Warning("Assembly integrity check not configured. Set AssemblyIntegrity:ExpectedHash in appsettings.json");
 }
 
-if (!useInMemory)
+var skipMigration = builder.Configuration.GetValue<bool>("SkipMigration") || string.Equals(Environment.GetEnvironmentVariable("SKIP_MIGRATION"), "true", StringComparison.OrdinalIgnoreCase);
+if (!useInMemory && !skipMigration)
 {
     try
     {
@@ -492,6 +493,10 @@ if (!useInMemory)
     {
         Log.Error(ex, "Error al aplicar migraciones EF — la app continuará");
     }
+}
+else if (skipMigration)
+{
+    Log.Warning("SKIP_MIGRATION=true — Migrate() omitido, BD externa db45497 sin DDL");
 }
 
 if (app.Environment.IsDevelopment())

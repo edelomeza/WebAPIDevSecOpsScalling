@@ -50,8 +50,11 @@ namespace IntegrationTest.Login
         {
             var token = GenerateValidToken();
 
-            // Alterar el token (simular ataque)
-            var tamperedToken = token.Substring(0, token.Length - 2) + "xx";
+            // Alterar el payload (determinista) para romper la firma sin re-firmar
+            var parts = token.Split('.');
+            Assert.Equal(3, parts.Length);
+            parts[1] = (parts[1][0] == 'A' ? 'B' : 'A') + parts[1].Substring(1);
+            var tamperedToken = string.Join(".", parts);
 
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/secure");
             request.Headers.Authorization =

@@ -29,27 +29,31 @@ namespace WebAPIDevSecOps.Controllers
                 .ToString()
                 .Replace("Bearer ", "");
 
-            if (!string.IsNullOrEmpty(token))
+            if (string.IsNullOrEmpty(token))
             {
-                try
-                {
-                    var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-                    var jwt = handler.ReadJwtToken(token);
-                    var jti = jwt?.Id;
-                    if (!string.IsNullOrEmpty(jti))
-                    {
-                        await _blacklistService.AddAsync(jti, TimeSpan.FromMinutes(60));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error al blacklistear token");
-                }
-
-                return Ok(new { mensaje = "Sesión cerrada correctamente." });
+                return Unauthorized(new { mensaje = "No se proporcionó un token." });
             }
 
-            return Unauthorized(new { mensaje = "No se proporcionó un token." });
+            try
+            {
+                var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                var jwt = handler.ReadJwtToken(token);
+                var jti = jwt?.Id;
+                if (!string.IsNullOrEmpty(jti))
+                {
+                    if (await _blacklistService.IsBlacklistedAsync(jti))
+                    {
+                        return Unauthorized(new { mensaje = "Token ya revocado." });
+                    }
+                    await _blacklistService.AddAsync(jti, TimeSpan.FromMinutes(60));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al blacklistear token");
+            }
+
+            return Ok(new { mensaje = "Sesión cerrada correctamente." });
         }
     }
 }

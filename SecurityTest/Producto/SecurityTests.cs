@@ -123,12 +123,15 @@ namespace SecurityTest.Producto
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
-        // 5 — TOKEN ALTERADO
+        // 5 — TOKEN ALTERADO (payload mutate determinista)
         [Fact]
         public async Task Should_Reject_Tampered_Token()
         {
             var token = TokenHelper.GenerateValidToken(JwtKey, JwtIssuer, JwtAudience);
-            var tamperedToken = token[..^2] + "xx";
+            var parts = token.Split('.');
+            Assert.Equal(3, parts.Length);
+            parts[1] = (parts[1][0] == 'A' ? 'B' : 'A') + parts[1].Substring(1);
+            var tamperedToken = string.Join(".", parts);
 
             var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/producto");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tamperedToken);

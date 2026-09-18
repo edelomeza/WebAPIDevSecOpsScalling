@@ -265,8 +265,10 @@ Resources:
           dnf install -y docker aws-cli
           systemctl enable --now docker
           usermod -aG docker ec2-user
-          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
           # awslogs driver
           mkdir -p /etc/docker
           cat >/etc/docker/daemon.json <<'JSON'

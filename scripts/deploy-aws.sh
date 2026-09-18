@@ -25,6 +25,8 @@ aws cloudformation deploy \
   --parameter-overrides \
     ImageTag="$TAG" \
     DBPassword="$DB_PASSWORD" \
+    ExternalDbHost="${RDS_ADDRESS:-188.40.211.8}" \
+    DBName="${DB_NAME:-db45497}" \
     CorsAllowedOrigin="${CORS_ALLOWED_ORIGIN:-}" \
     AcmCertificateArn="${ACM_CERTIFICATE_ARN:-}" \
   --no-fail-on-empty-changeset

@@ -37,7 +37,7 @@ Parameters:
 Mappings:
   RegionMap:
     us-east-1:
-      AmiId: ami-0fc5d935ebf8bc3bc  # AL2023 x86_64 us-east-1 (actualizar via SSM si expira)
+      AmiId: ami-0bd3fbcdc633a1b1a  # AL2023 kernel-default-x86_64 us-east-1 (SSM /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 2026-09-18)
 
 Conditions:
   HasCertificate: !Not [!Equals [!Ref AcmCertificateArn, ""]]

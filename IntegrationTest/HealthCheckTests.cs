@@ -5,13 +5,23 @@ using WebAPIDevSecOps;
 
 namespace IntegrationTest
 {
-    public class HealthCheckTests : IClassFixture<WebApplicationFactory<Program>>
+    public class HealthCheckTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
     {
         private readonly WebApplicationFactory<Program> _factory;
+        private bool _disposed;
 
         public HealthCheckTests(WebApplicationFactory<Program> factory)
         {
             _factory = factory;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            // Null-guard para evitar NullReferenceException durante xUnit Test Class Cleanup (IClassFixture)
+            try { _factory?.Dispose(); } catch { /* ignore */ }
+            GC.SuppressFinalize(this);
         }
 
         [Fact]

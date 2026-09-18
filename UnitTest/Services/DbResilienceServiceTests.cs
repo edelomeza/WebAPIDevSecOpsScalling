@@ -75,7 +75,7 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Closes_After_HalfOpen_Success()
     {
-        var (service, logger) = CreateService(breakDurationSeconds: 1);
+        var (service, logger) = CreateService(breakDurationSeconds: 2);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -95,7 +95,7 @@ public class DbResilienceServiceTests
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
 
-        await Task.Delay(1500);
+        await Task.Delay(2500);
 
         var result = await service.SaveChangesAsync(dbMock.Object);
         Assert.Equal(1, result);
@@ -108,7 +108,7 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Reopens_After_HalfOpen_Failure()
     {
-        var (service, logger) = CreateService(breakDurationSeconds: 1);
+        var (service, logger) = CreateService(breakDurationSeconds: 2);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -128,7 +128,7 @@ public class DbResilienceServiceTests
         await Assert.ThrowsAsync<BrokenCircuitException>(() =>
             service.SaveChangesAsync(dbMock.Object));
 
-        await Task.Delay(1500);
+        await Task.Delay(2500);
 
         await Assert.ThrowsAsync<DbUpdateException>(() =>
             service.SaveChangesAsync(dbMock.Object));

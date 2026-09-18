@@ -156,7 +156,7 @@ Resources:
           FromPort: 8080
           ToPort: 8080
           SourceSecurityGroupId: !Ref SGALB
-          Description: ALB -> EC2 8080
+          Description: ALB to EC2 8080
       Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-sg-ec2" }]
 
   # SGRDS eliminado en Only B (sin RDS, trafico a 188.40.211.8 via egress 0.0.0.0/0)

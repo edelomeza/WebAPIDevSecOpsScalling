@@ -1,0 +1,61 @@
+name: Schedule Deploy (09:00 MX)
+
+on:
+  schedule:
+    - cron: '0 15 * * *'  # 09:00 America/Mexico_City UTC-6 diario 7/7
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy webapidevsecops-prod (09:00 MX)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Deploy infra (cloudformation deploy + wait nativo)
+        run: bash scripts/deploy-aws.sh webapidevsecops-prod "${{ github.sha }}"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          CORS_ALLOWED_ORIGIN: ${{ vars.CORS_ALLOWED_ORIGIN }}
+          ACM_CERTIFICATE_ARN: ${{ vars.ACM_ARN }}
+          RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          EXTERNAL_DB_HOST: ${{ vars.RDS_ADDRESS }}
+
+      - name: Deploy app via SSM (09:00 MX)
+        run: bash scripts/deploy-app.sh webapidevsecops-prod "${{ github.sha }}"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_USER: ${{ secrets.DB_USER }}
+          JWT_KEY_PROD: ${{ secrets.JWT_KEY_PROD }}
+          CORS_ALLOWED_ORIGIN: ${{ vars.CORS_ALLOWED_ORIGIN }}
+          RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          SKIP_MIGRATION: "true"
+
+      - name: Smoke health check
+        run: |
+          ALBDNS=$(aws cloudformation describe-stacks --stack-name webapidevsecops-prod --region "${{ vars.AWS_REGION || 'us-east-1' }}" --query "Stacks[0].Outputs[?OutputKey=='ALBDNS'].OutputValue" --output text)
+          echo "ALBDNS=$ALBDNS"
+          curl -sf "http://$ALBDNS/health/ready" | head -c 500
+          echo "Smoke OK"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}

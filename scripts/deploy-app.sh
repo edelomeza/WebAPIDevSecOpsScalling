@@ -63,7 +63,7 @@ ssm_run() {
   local cid
   cid=$(aws ssm send-command --instance-ids "$EC2_ID" --document-name "AWS-RunShellScript" --region "$REGION" --parameters "commands=[\"$cmd\"]" --query "Command.CommandId" --output text)
   echo "[ssm] CommandId=$cid"
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 48); do
     sleep 5
     local status
     status=$(aws ssm list-command-invocations --command-id "$cid" --details --region "$REGION" --query "CommandInvocations[0].Status" --output text 2>/dev/null || echo "Pending")
@@ -75,7 +75,7 @@ ssm_run() {
       return 1
     fi
   done
-  echo "ERROR: SSM command $cid timeout" >&2
+  echo "ERROR: SSM command $cid timeout (240s)" >&2
   return 1
 }
 
@@ -85,9 +85,17 @@ echo "[deploy-app] Transfiriendo docker-compose.aws.yml via SSM..."
 COMPOSE_B64=$(base64 -w 0 deploy/docker-compose.aws.yml 2>/dev/null || base64 -b 0 deploy/docker-compose.aws.yml)
 ssm_run "crear docker-compose.aws.yml" "echo $COMPOSE_B64 | base64 -d > /home/ec2-user/docker-compose.aws.yml && ls -l /home/ec2-user/docker-compose.aws.yml"
 
+# Preflight: asegurar docker + compose plugin (fix race UserData / docker: command not found)
+# Idempotente: si UserData aun no termino o dnf update fallo, instala aqui sin abortar deploy
+echo "[deploy-app] Preflight docker via SSM (espera hasta 180s)..."
+ENSURE_DOCKER='set -e; if ! command -v docker >/dev/null 2>&1; then echo "[ensure-docker] docker no encontrado, instalando..."; dnf install -y docker aws-cli || dnf install -y docker; systemctl enable --now docker; fi; for i in $(seq 1 36); do if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then break; fi; echo "[ensure-docker] esperando docker $i/36..."; sleep 5; if ! command -v docker >/dev/null 2>&1; then dnf install -y docker && systemctl enable --now docker; fi; done; docker --version || { echo "ERROR: docker no disponible tras espera" >&2; systemctl status docker 2>&1 || true; cat /var/log/cloud-init-output.log 2>&1 | tail -n 100 || true; cat /var/log/user-data.log 2>&1 | tail -n 100 || true; exit 1; }; if ! docker compose version >/dev/null 2>&1; then echo "[ensure-docker] instalando docker compose plugin..."; mkdir -p /usr/local/lib/docker/cli-plugins; curl -L --retry 5 --retry-delay 5 --fail https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose; chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose; docker compose version; fi; systemctl is-active docker >/dev/null 2>&1 || systemctl restart docker; echo "[ensure-docker] docker listo: $(docker --version) $(docker compose version 2>&1 | head -n 1)"'
+# Escapar comillas para send-command (evita romper JSON)
+ENSURE_ESCAPED=$(printf '%s' "$ENSURE_DOCKER" | sed 's/"/\\"/g')
+ssm_run "ensure docker" "$ENSURE_ESCAPED"
+
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS && cd /home/ec2-user && docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"

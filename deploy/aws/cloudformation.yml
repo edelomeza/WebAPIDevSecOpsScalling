@@ -261,23 +261,31 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -eux
-          dnf update -y
-          dnf install -y docker aws-cli
+          exec > /var/log/user-data.log 2>&1
+          echo "[user-data] start Tag=${ImageTag} $(date -u +%FT%TZ)"
+          # dnf update no debe abortar el UserData (espejos / t3.micro OOM)
+          dnf update -y || echo "[user-data] WARN dnf update fallo, continuo"
+          dnf install -y docker aws-cli || dnf install -y docker
           systemctl enable --now docker
           usermod -aG docker ec2-user
           mkdir -p /usr/local/lib/docker/cli-plugins
-          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+          # retry + fail-fast, fallback a binario fijo x86_64 (AL2023 t3.micro)
+          curl -L --retry 5 --retry-delay 5 --fail "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose || curl -L --retry 5 --retry-delay 5 --fail https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
           chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
           ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+          docker --version || true
+          docker compose version || true
           # awslogs driver
           mkdir -p /etc/docker
           cat >/etc/docker/daemon.json <<'JSON'
           { "log-driver": "awslogs", "log-opts": { "awslogs-region": "${AWS::Region}", "awslogs-group": "${LogGroup}", "awslogs-create-group": "true" } }
           JSON
-          systemctl restart docker
-          # pull image trazable por sha
-          docker pull edelomeza/webapidevsecops-scalling:${ImageTag} || true
-          echo "EC2 UserData done Tag=${ImageTag} CORS=${CorsAllowedOrigin}" | logger -t user-data
+          systemctl restart docker || systemctl start docker
+          systemctl is-active docker || (echo "[user-data] ERROR docker no activo" >&2; systemctl status docker || true)
+          # pull image trazable por sha (no bloqueante)
+          docker pull edelomeza/webapidevsecops-scalling:${ImageTag} || echo "[user-data] WARN docker pull ${ImageTag} fallo, se hara via SSM"
+          echo "EC2 UserData done Tag=${ImageTag} CORS=${CorsAllowedOrigin} $(date -u +%FT%TZ)" | logger -t user-data
+          echo "[user-data] done"
 
   # --- ALB ---
   ALB:

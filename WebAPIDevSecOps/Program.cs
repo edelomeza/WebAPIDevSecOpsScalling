@@ -420,7 +420,13 @@ builder.Services.AddMassTransit(x =>
     {
         x.UsingAmazonSqs((context, cfg) =>
         {
-            cfg.Host(sqsRegion, h => { });
+            // B1 Standard: prefijo por stack para aislar colas/topics y evitar colisiones entre stacks.
+            // Scope=true => colas como "<stack>-stock-validator-consumer". Sin FIFO: colas CFN *.fifo quedan solo para DLQ/dashboard.
+            var stackName = builder.Configuration["StackName"] ?? Environment.GetEnvironmentVariable("STACK_NAME") ?? "webapidevsecops-prod";
+            cfg.Host(sqsRegion, h =>
+            {
+                h.Scope($"{stackName}-", true);
+            });
             cfg.ConfigureEndpoints(context);
         });
     }

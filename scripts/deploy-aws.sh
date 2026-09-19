@@ -45,4 +45,17 @@ echo "ALBDNS=$ALBDNS"
 echo "RDS_ADDRESS=$RDS_ADDR"
 echo "EC2PublicIP=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" --output text)"
 
+# Esperar SSM online (evita race con deploy-app.sh)
+EC2_ID=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || echo "None")
+if [[ -n "$EC2_ID" && "$EC2_ID" != "None" ]]; then
+  echo "[deploy-aws] Esperando SSM online EC2_ID=$EC2_ID (hasta 120s)..."
+  for i in $(seq 1 24); do
+    PING=$(aws ssm describe-instance-information --region "$REGION" --filters "Key=InstanceIds,Values=$EC2_ID" --query "InstanceInformationList[0].PingStatus" --output text 2>/dev/null || echo "None")
+    if [[ "$PING" == "Online" ]]; then echo "[deploy-aws] SSM Online (intento $i)"; break; fi
+    echo "[deploy-aws] SSM $PING intento $i/24..."
+    sleep 5
+    if [[ "$i" -eq 24 ]]; then echo "[deploy-aws] WARN SSM no Online tras 120s, continuo (deploy-app hara ensure-docker)"; fi
+  done
+fi
+
 echo "[deploy-aws] Stack $STACK CREATE_COMPLETE"

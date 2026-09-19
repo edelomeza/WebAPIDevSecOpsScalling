@@ -173,9 +173,30 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonSNSFullAccess
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-role-ec2" }]
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-sns-sqs-scoped"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:ListTopics
+                  - sns:GetTopicAttributes
+                  - sns:SetTopicAttributes
+                  - sns:Subscribe
+                  - sns:Unsubscribe
+                  - sns:Publish
+                  - sns:TagResource
+                  - sqs:ListQueues
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                Resource: "*"
 
   IAMInstanceProfile:
     Type: AWS::IAM::InstanceProfile

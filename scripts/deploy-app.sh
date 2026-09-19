@@ -95,7 +95,7 @@ ssm_run "ensure docker" "$ENSURE_ESCAPED"
 
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"

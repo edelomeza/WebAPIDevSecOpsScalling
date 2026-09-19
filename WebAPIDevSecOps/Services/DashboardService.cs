@@ -180,7 +180,18 @@ namespace WebAPIDevSecOps.Services
                 return new Dictionary<string, int>();
             }
 
-            var queueNames = new[] { "pedidos.fifo", "pedidos-pago.fifo", "pedidos-factura.fifo", "pedidos-dlq.fifo" };
+            // Prefijo por stack: CFN crea colas como "<stack>-pedidos.fifo" (cloudformation.yml:193,199,213,227).
+            // Program.cs añade Scope("<stack>-", true) para endpoints MassTransit. Dashboard debe usar mismo prefijo.
+            var stackPrefix = _configuration?.GetValue<string>("StackName")
+                ?? _configuration?.GetValue<string>("STACK_NAME")
+                ?? Environment.GetEnvironmentVariable("STACK_NAME")
+                ?? Environment.GetEnvironmentVariable("StackName")
+                ?? "webapidevsecops-prod";
+            if (!stackPrefix.EndsWith("-", StringComparison.Ordinal))
+                stackPrefix += "-";
+
+            var baseQueueNames = new[] { "pedidos.fifo", "pedidos-pago.fifo", "pedidos-factura.fifo", "pedidos-dlq.fifo" };
+            var queueNames = baseQueueNames.Select(q => $"{stackPrefix}{q}").ToArray();
             var result = new Dictionary<string, int>();
 
             foreach (var queueName in queueNames)
@@ -209,13 +220,45 @@ namespace WebAPIDevSecOps.Services
 
                     var visible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessages", out var v) && int.TryParse(v, out var iv) ? iv : 0;
                     var notVisible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessagesNotVisible", out var v2) && int.TryParse(v2, out var iv2) ? iv2 : 0;
-                    result[queueName] = visible + notVisible;
+                    // Clave corta para DashboardDto (sin prefijo stack) para estabilidad del contrato API
+                    var shortKey = queueName.StartsWith(stackPrefix, StringComparison.Ordinal) ? queueName.Substring(stackPrefix.Length) : queueName;
+                    result[shortKey] = visible + notVisible;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Error consultando cola SQS {Queue}", queueName);
-                    result[queueName] = 0;
+                    var shortKeyFallback = queueName.StartsWith(stackPrefix, StringComparison.Ordinal) ? queueName.Substring(stackPrefix.Length) : queueName;
+                    result[shortKeyFallback] = 0;
                 }
+            }
+
+            // Complemento B1: profundidad de colas MassTransit (standard, con prefijo stack) via ListQueues filtrando por stackPrefix
+            try
+            {
+                var listAll = await _sqs.ListQueuesAsync(stackPrefix.TrimEnd('-'));
+                foreach (var url in listAll.QueueUrls.Where(u => u.Contains(stackPrefix, StringComparison.Ordinal)))
+                {
+                    var name = url.Split('/').Last();
+                    if (result.ContainsKey(name) || baseQueueNames.Contains(name) || baseQueueNames.Any(b => $"{stackPrefix}{b}" == name))
+                        continue;
+                    try
+                    {
+                        var attrResp = await _sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+                        {
+                            QueueUrl = url,
+                            AttributeNames = new List<string> { "ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible" }
+                        });
+                        var visible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessages", out var v) && int.TryParse(v, out var iv) ? iv : 0;
+                        var notVisible = attrResp.Attributes.TryGetValue("ApproximateNumberOfMessagesNotVisible", out var v2) && int.TryParse(v2, out var iv2) ? iv2 : 0;
+                        var shortMt = name.StartsWith(stackPrefix, StringComparison.Ordinal) ? name.Substring(stackPrefix.Length) : name;
+                        result[shortMt] = visible + notVisible;
+                    }
+                    catch { /* ignorar colas efímeras MT */ }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error listando colas MassTransit con prefijo {Prefix}", stackPrefix);
             }
 
             return result;

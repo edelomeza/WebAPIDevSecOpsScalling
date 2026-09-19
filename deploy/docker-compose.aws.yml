@@ -42,6 +42,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-db45497}
       - SKIP_MIGRATION=${SKIP_MIGRATION:-true}
+      - STACK_NAME=${STACK_NAME:-webapidevsecops-prod}
+      - StackName=${STACK_NAME:-webapidevsecops-prod}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/ready"]
       interval: 30s

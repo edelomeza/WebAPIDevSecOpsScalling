@@ -22,7 +22,7 @@ public class ClienteController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<CliClienteDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -34,7 +34,7 @@ public class ClienteController : ControllerBase
     }
 
     [HttpGet("buscar")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<CliClienteDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -50,7 +50,7 @@ public class ClienteController : ControllerBase
     }
 
     [HttpGet("autocomplete")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(typeof(IEnumerable<CliClienteAutocompleteDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

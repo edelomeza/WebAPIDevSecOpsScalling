@@ -17,7 +17,7 @@ public class EstadoVentaController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<VenCatEstadoDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -29,7 +29,7 @@ public class EstadoVentaController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(VenCatEstadoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -24,11 +24,8 @@ namespace WebAPIDevSecOps.Services
 
         private async Task AssertOwnershipAsync(VenVentaDetalle detalle)
         {
-            await _context.Entry(detalle).Reference(d => d.VenVenta).LoadAsync();
-            await _context.Entry(detalle.VenVenta!).Reference(v => v.SegUsuario).LoadAsync();
-            var username = _userAccessor.GetCurrentUsername();
-            if (!string.Equals(detalle.VenVenta!.SegUsuario?.strNombre, username, StringComparison.OrdinalIgnoreCase))
-                throw new UnauthorizedAccessException("No tiene permiso para acceder a este detalle de venta.");
+            // Global: cualquier autenticado accede a cualquier detalle
+            return;
         }
 
         public async Task<PagedResult<VenVentaDetalleDto>> GetAllAsync(QueryParams? queryParams = null)
@@ -109,9 +106,8 @@ namespace WebAPIDevSecOps.Services
                 throw new ArgumentException("La venta especificada no existe.");
             }
 
-            var usuario = _userAccessor.GetCurrentUsername();
-            if (!string.Equals(venta.SegUsuario?.strNombre, usuario, StringComparison.OrdinalIgnoreCase))
-                throw new UnauthorizedAccessException("No tiene permiso para agregar detalles a esta venta.");
+            // Global: cualquier autenticado puede agregar detalles a cualquier venta
+            _ = _userAccessor.GetCurrentUsername();
 
             var semaphore = _productLocks.GetOrAdd(dto.idProProducto, _ => new SemaphoreSlim(1, 1));
             await semaphore.WaitAsync();

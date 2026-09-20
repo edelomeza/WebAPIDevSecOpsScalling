@@ -23,55 +23,41 @@ namespace WebAPIDevSecOps.Services
 
         private IQueryable<ProProducto> ApplyOwnershipFilter(IQueryable<ProProducto> query)
         {
-            if (_userAccessor.IsAdmin())
-                return query;
-            var username = _userAccessor.GetCurrentUsername();
-            if (username == null)
-                return query.Where(p => false);
-            return query.Where(p => p.strCreadoPorUsuario == username);
+            return query;
         }
 
         private void AssertOwnership(string? creadoPorUsuario)
         {
-            if (_userAccessor.IsAdmin())
-                return;
-            var username = _userAccessor.GetCurrentUsername();
-            if (creadoPorUsuario != username)
-                throw new UnauthorizedAccessException("No tiene permisos para acceder a este recurso.");
+            return;
         }
 
         public async Task<PagedResult<ProProductoDto>> GetAllAsync(QueryParams? queryParams = null)
         {
             var p = queryParams ?? new QueryParams();
-            var key = $"cache:productos:page{p.PageNumber}:size{p.PageSize}";
-
-            return await _cache.GetOrCreateAsync(key, async () =>
-            {
-                var query = ApplyOwnershipFilter(_context.ProProducto.AsNoTracking())
-                    .Select(x => new ProProductoDto
-                    {
-                        id = x.id,
-                        strNombreProducto = x.strNombreProducto,
-                        strURLImagen = x.strURLImagen,
-                        strDescripcion = x.strDescripcion,
-                        intNumeroExistencia = x.intNumeroExistencia,
-                        decPrecio = x.decPrecio,
-                        RowVersion = x.RowVersion,
-                        strCreadoPorUsuario = x.strCreadoPorUsuario,
-                    });
-
-                var totalCount = await query.CountAsync();
-                query = query.ApplyPagination(p);
-                var items = await query.ToListAsync();
-
-                return new PagedResult<ProProductoDto>
+            var query = _context.ProProducto.AsNoTracking()
+                .Select(x => new ProProductoDto
                 {
-                    Items = items,
-                    TotalCount = totalCount,
-                    PageNumber = p.PageNumber,
-                    PageSize = p.PageSize,
-                };
-            }, TimeSpan.FromSeconds(30));
+                    id = x.id,
+                    strNombreProducto = x.strNombreProducto,
+                    strURLImagen = x.strURLImagen,
+                    strDescripcion = x.strDescripcion,
+                    intNumeroExistencia = x.intNumeroExistencia,
+                    decPrecio = x.decPrecio,
+                    RowVersion = x.RowVersion,
+                    strCreadoPorUsuario = x.strCreadoPorUsuario,
+                });
+
+            var totalCount = await query.CountAsync();
+            query = query.ApplyPagination(p);
+            var items = await query.ToListAsync();
+
+            return new PagedResult<ProProductoDto>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = p.PageNumber,
+                PageSize = p.PageSize,
+            };
         }
 
         public async Task<PagedResult<ProProductoDto>> SearchByNameAsync(string texto, QueryParams? queryParams = null)

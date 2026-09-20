@@ -41,8 +41,12 @@ aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --qu
 
 ALBDNS=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='ALBDNS'].OutputValue" --output text)
 RDS_ADDR=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='RDSAddress'].OutputValue" --output text)
+CLOUDFRONT=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain'].OutputValue" --output text 2>/dev/null || echo "None")
+CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" --output text 2>/dev/null || echo "None")
 echo "ALBDNS=$ALBDNS"
 echo "RDS_ADDRESS=$RDS_ADDR"
+echo "CLOUDFRONT=$CLOUDFRONT"
+echo "CLOUDFRONT_URL=$CLOUDFRONT_URL"
 echo "EC2PublicIP=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='EC2PublicIP'].OutputValue" --output text)"
 
 # Esperar SSM online (evita race con deploy-app.sh)

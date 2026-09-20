@@ -58,8 +58,16 @@ jobs:
       - name: Smoke health check
         run: |
           ALBDNS=$(aws cloudformation describe-stacks --stack-name webapidevsecops-prod --region "${{ vars.AWS_REGION || 'us-east-1' }}" --query "Stacks[0].Outputs[?OutputKey=='ALBDNS'].OutputValue" --output text)
+          CLOUDFRONT=$(aws cloudformation describe-stacks --stack-name webapidevsecops-prod --region "${{ vars.AWS_REGION || 'us-east-1' }}" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain'].OutputValue" --output text 2>/dev/null || echo "None")
           echo "ALBDNS=$ALBDNS"
+          echo "CLOUDFRONT=$CLOUDFRONT"
           curl -sf "http://$ALBDNS/health/ready" | head -c 500
+          echo "Smoke ALB OK"
+          if [[ -n "$CLOUDFRONT" && "$CLOUDFRONT" != "None" && "$CLOUDFRONT" != "" ]]; then
+            echo "Verificando CloudFront https://$CLOUDFRONT/health/ready ..."
+            curl -sf "https://$CLOUDFRONT/health/ready" | head -c 500 || echo "WARN CloudFront aun Deployed (5-15 min), ALB ya OK"
+            echo "Smoke CF intentado"
+          fi
           echo "Smoke OK"
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}

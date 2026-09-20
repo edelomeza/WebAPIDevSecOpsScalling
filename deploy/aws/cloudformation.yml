@@ -367,6 +367,42 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
 
+  # --- CloudFront $0 HTTPS (aprendizaje, sin dominio) ---
+  # Cert gestionado *.cloudfront.net valido navegador, origen ALB http-only.
+  # Viewer https://dxxx.cloudfront.net -> CF -> http://ALB:80 -> TG 8080.
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName}-cf-https-$0"
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: ALBOrigin
+            DomainName: !GetAtt ALB.DNSName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginReadTimeout: 30
+              OriginKeepaliveTimeout: 5
+        DefaultCacheBehavior:
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 4135ea0d-6df8-44a3-9dfb-4b5a84be39ad # CachingDisabled
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea055f # AllViewer (reenvia Authorization)
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-cf"
+
 Outputs:
   ALBDNS:
     Description: DNS publico para API_BASE_URL y health
@@ -377,8 +413,14 @@ Outputs:
     Value: !Sub "http://${ALB.DNSName}/health/ready"
   ALBUrl443:
     Condition: HasCertificate
-    Description: URL https healthcheck
+    Description: URL https healthcheck (solo con ACM dominio)
     Value: !Sub "https://${ALB.DNSName}/health/ready"
+  CloudFrontDomain:
+    Description: Dominio https *.cloudfront.net $0 aprendizaje (cert gestionado AWS)
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  CloudFrontUrl:
+    Description: URL https healthcheck via CloudFront (valido navegador)
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}/health/ready"
   EC2PublicIP:
     Description: IP publica temporal EC2 (no usar como base, usar ALB DNS)
     Value: !GetAtt EC2Instance.PublicIp

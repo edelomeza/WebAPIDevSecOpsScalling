@@ -30,6 +30,18 @@ if [[ -z "$ALBDNS" || "$ALBDNS" == "None" ]]; then
   exit 1
 fi
 
+# CloudFront $0 HTTPS (opcional, si el stack ya lo expone)
+CLOUDFRONT_DOMAIN="${CLOUDFRONT_DOMAIN:-}"
+if [[ -z "$CLOUDFRONT_DOMAIN" ]]; then
+  CLOUDFRONT_DOMAIN=$(aws cloudformation describe-stacks --stack-name "$STACK" --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain'].OutputValue" --output text 2>/dev/null || echo "")
+  if [[ "$CLOUDFRONT_DOMAIN" == "None" ]]; then CLOUDFRONT_DOMAIN=""; fi
+fi
+if [[ -n "$CLOUDFRONT_DOMAIN" ]]; then
+  echo "[deploy-app] CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN (https via CloudFront)"
+else
+  echo "[deploy-app] CLOUDFRONT_DOMAIN vacio -> fallback http://ALB (aprendizaje sin https o stack previo)"
+fi
+
 # Only B: priorizar RDS_ADDRESS inyectado (GH vars 188.40.211.8) sobre CFN
 if [[ -n "${RDS_ADDRESS:-}" && "$RDS_ADDRESS" != "None" ]]; then
   echo "[deploy-app] Usando RDS_ADDRESS inyectado $RDS_ADDRESS (vars.RDS_ADDRESS)"
@@ -93,9 +105,19 @@ ENSURE_DOCKER='set -e; if ! command -v docker >/dev/null 2>&1; then echo "[ensur
 ENSURE_ESCAPED=$(printf '%s' "$ENSURE_DOCKER" | sed 's/"/\\"/g')
 ssm_run "ensure docker" "$ENSURE_ESCAPED"
 
+# JWT Issuer/Audience: si hay CloudFront usa https://<cf> (cert valido), sino fallback http://ALB
+if [[ -n "$CLOUDFRONT_DOMAIN" ]]; then
+  JWT_ISSUER="https://$CLOUDFRONT_DOMAIN"
+  JWT_AUDIENCE="https://$CLOUDFRONT_DOMAIN"
+else
+  JWT_ISSUER="http://$ALBDNS"
+  JWT_AUDIENCE="http://$ALBDNS"
+fi
+echo "[deploy-app] JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE"
+
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=http://$ALBDNS JWT_AUDIENCE=http://$ALBDNS StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"
@@ -115,4 +137,20 @@ for i in $(seq 1 18); do
   fi
 done
 
-echo "[deploy-app] Deploy OK Tag=$TAG ALB=http://$ALBDNS/health/ready"
+# Verificacion https via CloudFront si existe (no bloqueante, 30s)
+if [[ -n "$CLOUDFRONT_DOMAIN" ]]; then
+  echo "[deploy-app] Verificando https CloudFront https://$CLOUDFRONT_DOMAIN/health/ready (hasta 60s, CF puede tardar Deploy)..."
+  for j in $(seq 1 6); do
+    if curl -sf "https://$CLOUDFRONT_DOMAIN/health/ready" >/dev/null; then
+      echo "[deploy-app] CloudFront https 200 OK (intento $j)"
+      break
+    fi
+    echo "[deploy-app] CloudFront https no listo intento $j/6..."
+    sleep 10
+  done
+  if ! curl -sf "https://$CLOUDFRONT_DOMAIN/health/ready" >/dev/null; then
+    echo "[deploy-app] WARN https://$CLOUDFRONT_DOMAIN/health/ready no responde aun (CF puede tardar 5-15 min en Deployed), ALB http ya OK" >&2
+  fi
+fi
+
+echo "[deploy-app] Deploy OK Tag=$TAG ALB=http://$ALBDNS/health/ready CLOUDFRONT=${CLOUDFRONT_DOMAIN:+https://$CLOUDFRONT_DOMAIN/health/ready}"

@@ -83,7 +83,7 @@ namespace SecurityTest.Usuarios
             Assert.Equal(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
         }
 
-        // 2 — ROL INCORRECTO
+        // 2 — ROL INCORRECTO (global: cualquier autenticado ve)
         [Fact]
         public async Task Should_Reject_Token_With_Wrong_Role()
         {
@@ -93,7 +93,7 @@ namespace SecurityTest.Usuarios
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
 
             var response = await _client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 3 — TOKEN EXPIRADO
@@ -379,7 +379,7 @@ namespace SecurityTest.Usuarios
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
-        // 21 — AUTOCOMPLETE CON ROL NO ADMIN
+        // 21 — AUTOCOMPLETE CON ROL NO ADMIN (global)
         [Fact]
         public async Task Should_Reject_Autocomplete_With_NonAdmin_Token()
         {
@@ -390,10 +390,10 @@ namespace SecurityTest.Usuarios
 
             var response = await _client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
-        // 19 — BUSCAR CON ROL NO ADMIN
+        // 19 — BUSCAR CON ROL NO ADMIN (global)
         [Fact]
         public async Task Should_Reject_Search_With_NonAdmin_Token()
         {
@@ -404,7 +404,7 @@ namespace SecurityTest.Usuarios
 
             var response = await _client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
     }
 }

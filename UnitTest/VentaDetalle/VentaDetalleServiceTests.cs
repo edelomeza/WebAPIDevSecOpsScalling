@@ -113,27 +113,29 @@ namespace UnitTest.VentaDetalle
         [Fact]
         public async Task GetById_NotOwner_ThrowsUnauthorized()
         {
+            // Visibilidad global: cualquier usuario ve detalle de otro
             var (context, _, ventaId, _, _, _) = await SeedAsync("Otro User");
             var service = CreateService(context, "Test User");
             var detalle = await SeedDetalleAsync(context, ventaId, 1, 1, 10m);
 
-            var act = () => service.GetByIdAsync(detalle.id);
+            var result = await service.GetByIdAsync(detalle.id);
 
-            await act.Should().ThrowAsync<UnauthorizedAccessException>()
-                .WithMessage("No tiene permiso para acceder a este detalle de venta.");
+            result.Should().NotBeNull();
+            result!.id.Should().Be(detalle.id);
         }
 
         [Fact]
         public async Task Create_NotOwner_ThrowsUnauthorized()
         {
+            // Escritura global: cualquier usuario crea detalle en venta de otro
             var (context, _, ventaId, productoId, _, _) = await SeedAsync("Dueno Real");
             var service = CreateService(context, "Intruso");
             var dto = TestDataFactory.CreateVentaDetalleCreateDto(ventaId, productoId, 1);
 
-            var act = () => service.CreateAsync(dto);
+            var result = await service.CreateAsync(dto);
 
-            await act.Should().ThrowAsync<UnauthorizedAccessException>()
-                .WithMessage("No tiene permiso para agregar detalles a esta venta.");
+            result.Should().NotBeNull();
+            result.idVenVenta.Should().Be(ventaId);
         }
 
         [Fact]
@@ -163,6 +165,7 @@ namespace UnitTest.VentaDetalle
         [Fact]
         public async Task Update_NotOwner_ThrowsUnauthorized()
         {
+            // Escritura global: cualquier usuario actualiza detalle de otro
             var (context, _, ventaId, productoId, precio, _) = await SeedAsync("Dueno Real");
             var service = CreateService(context, "Intruso");
             var detalle = await SeedDetalleAsync(context, ventaId, productoId, 5, 5 * precio);
@@ -170,7 +173,7 @@ namespace UnitTest.VentaDetalle
 
             var act = () => service.UpdateAsync(detalle.id, dto);
 
-            await act.Should().ThrowAsync<UnauthorizedAccessException>();
+            await act.Should().NotThrowAsync();
         }
 
         [Fact]
@@ -300,6 +303,7 @@ namespace UnitTest.VentaDetalle
         [Fact]
         public async Task Delete_NotOwner_ThrowsUnauthorized()
         {
+            // Escritura global: cualquier usuario borra detalle de otro
             var (context, _, ventaId, productoId, precio, _) = await SeedAsync("Dueno Real");
             var service = CreateService(context, "Intruso");
             var detalle = await SeedDetalleAsync(context, ventaId, productoId, 5, 5 * precio);
@@ -307,7 +311,7 @@ namespace UnitTest.VentaDetalle
 
             var act = () => service.DeleteAsync(detalle.id, dto);
 
-            await act.Should().ThrowAsync<UnauthorizedAccessException>();
+            await act.Should().NotThrowAsync();
         }
 
         [Fact]

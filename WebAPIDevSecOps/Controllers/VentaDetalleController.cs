@@ -21,7 +21,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<VenVentaDetalleDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -33,7 +33,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(typeof(VenVentaDetalleDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -47,7 +47,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpGet("autocomplete")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(typeof(IEnumerable<ProProductoAutocompleteDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -67,7 +67,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -96,7 +96,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -124,7 +124,7 @@ public class VentaDetalleController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(typeof(VenVentaDetalleDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

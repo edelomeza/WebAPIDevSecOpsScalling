@@ -23,54 +23,42 @@ namespace WebAPIDevSecOps.Services
 
         private IQueryable<CliCliente> ApplyOwnershipFilter(IQueryable<CliCliente> query)
         {
-            if (_userAccessor.IsAdmin())
-                return query;
-            var username = _userAccessor.GetCurrentUsername();
-            if (username == null)
-                return query.Where(c => false);
-            return query.Where(c => c.strCreadoPorUsuario == username);
+            // Visibilidad global: cualquier usuario autenticado ve datos de otros (requisito demo)
+            return query;
         }
 
         private void AssertOwnership(string? creadoPorUsuario)
         {
-            if (_userAccessor.IsAdmin())
-                return;
-            var username = _userAccessor.GetCurrentUsername();
-            if (creadoPorUsuario != username)
-                throw new UnauthorizedAccessException("No tiene permisos para acceder a este recurso.");
+            // Escritura global: cualquier autenticado puede editar/borrar (requisito demo)
+            return;
         }
 
         public async Task<PagedResult<CliClienteDto>> GetAllAsync(QueryParams? queryParams = null)
         {
             var p = queryParams ?? new QueryParams();
-            var key = $"cache:clientes:page{p.PageNumber}:size{p.PageSize}";
-
-            return await _cache.GetOrCreateAsync(key, async () =>
-            {
-                var query = ApplyOwnershipFilter(_context.CliCliente.AsNoTracking())
-                    .Select(c => new CliClienteDto
-                    {
-                        id = c.id,
-                        strNombreCliente = c.strNombreCliente,
-                        strDireccionCliente = c.strDireccionCliente,
-                        strCorreoElectronico = c.strCorreoElectronico,
-                        strNumeroTelefono = c.strNumeroTelefono,
-                        RowVersion = c.RowVersion,
-                        strCreadoPorUsuario = c.strCreadoPorUsuario,
-                    });
-
-                var totalCount = await query.CountAsync();
-                query = query.ApplyPagination(p);
-                var items = await query.ToListAsync();
-
-                return new PagedResult<CliClienteDto>
+            var query = _context.CliCliente.AsNoTracking()
+                .Select(c => new CliClienteDto
                 {
-                    Items = items,
-                    TotalCount = totalCount,
-                    PageNumber = p.PageNumber,
-                    PageSize = p.PageSize,
-                };
-            }, TimeSpan.FromSeconds(30));
+                    id = c.id,
+                    strNombreCliente = c.strNombreCliente,
+                    strDireccionCliente = c.strDireccionCliente,
+                    strCorreoElectronico = c.strCorreoElectronico,
+                    strNumeroTelefono = c.strNumeroTelefono,
+                    RowVersion = c.RowVersion,
+                    strCreadoPorUsuario = c.strCreadoPorUsuario,
+                });
+
+            var totalCount = await query.CountAsync();
+            query = query.ApplyPagination(p);
+            var items = await query.ToListAsync();
+
+            return new PagedResult<CliClienteDto>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = p.PageNumber,
+                PageSize = p.PageSize,
+            };
         }
 
         public async Task<PagedResult<CliClienteDto>> SearchByNameAsync(string texto, QueryParams? queryParams = null)

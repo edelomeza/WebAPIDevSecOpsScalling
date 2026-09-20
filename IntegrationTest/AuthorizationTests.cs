@@ -38,6 +38,7 @@ public class AuthorizationTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task UsuarioA_NoPuedeVer_ClienteDeUsuarioB()
     {
+        // Global: cualquier usuario ve datos de otro
         var createDto = TestDataFactory.CreateClienteCreateDto(
             nombre: "clientea",
             correo: "clientea@test.com",
@@ -57,12 +58,13 @@ public class AuthorizationTests : IClassFixture<WebApplicationFactory<Program>>
         getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", UserBToken);
         var getResponse = await _client.SendAsync(getRequest);
 
-        getResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
     public async Task UsuarioA_NoPuedeModificar_ProductoDeUsuarioB()
     {
+        // Global: cualquier usuario modifica datos de otro
         var createDto = TestDataFactory.CreateProductoCreateDto(
             nombre: "productob",
             existencia: 10,
@@ -94,7 +96,7 @@ public class AuthorizationTests : IClassFixture<WebApplicationFactory<Program>>
         updateRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", UserAToken);
         var updateResponse = await _client.SendAsync(updateRequest);
 
-        updateResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]

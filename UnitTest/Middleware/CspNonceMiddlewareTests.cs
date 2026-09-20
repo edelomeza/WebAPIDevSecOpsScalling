@@ -96,7 +96,7 @@ namespace UnitTest.Middleware
             await middleware.InvokeAsync(context);
 
             var csp = context.Response.Headers["Content-Security-Policy"].ToString();
-            csp.Should().Be("default-src 'none'; frame-ancestors 'none';");
+            csp.Should().Be("default-src 'none'; frame-ancestors 'none'; connect-src 'self' https://*.cloudfront.net;");
         }
 
         [Fact]

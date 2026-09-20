@@ -65,8 +65,9 @@ namespace WebAPIDevSecOps.Middleware
             }
             else
             {
+                // CloudFront $0 https: permite connect a *.cloudfront.net sin relajar default-src
                 context.Response.Headers.Append("Content-Security-Policy",
-                    "default-src 'none'; frame-ancestors 'none';");
+                    "default-src 'none'; frame-ancestors 'none'; connect-src 'self' https://*.cloudfront.net;");
             }
 
             await _next(context);

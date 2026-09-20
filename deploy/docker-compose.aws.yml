@@ -30,8 +30,10 @@ services:
       - ConnectionStrings__Redis=redis:6379
       # Secrets inyectados desde GH Secrets (NoEcho) - no hardcode
       - Jwt__Key=${JWT_KEY_PROD}
-      - Jwt__Issuer=${JWT_ISSUER:-http://${ALB_DNS:-localhost}}
-      - Jwt__Audience=${JWT_AUDIENCE:-http://${ALB_DNS:-localhost}}
+      - Jwt__Issuer=${JWT_ISSUER:-https://${CLOUDFRONT_DOMAIN:-${ALB_DNS:-localhost}}}
+      - Jwt__Audience=${JWT_AUDIENCE:-https://${CLOUDFRONT_DOMAIN:-${ALB_DNS:-localhost}}}
+      - CLOUDFRONT_DOMAIN=${CLOUDFRONT_DOMAIN:-}
+      - ALB_DNS=${ALB_DNS:-}
       - CORS_ALLOWED_ORIGIN=${CORS_ALLOWED_ORIGIN}
       # RateLimiting relajado solo via env (Production.json mantiene limites estrictos)
       - RateLimiting__GlobalPermitLimit=5000

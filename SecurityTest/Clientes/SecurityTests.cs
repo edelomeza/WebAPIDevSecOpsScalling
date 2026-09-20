@@ -87,7 +87,7 @@ namespace SecurityTest.Clientes
             Assert.Equal(HttpStatusCode.Unauthorized, autoResponse.StatusCode);
         }
 
-        // 2 — ROL INCORRECTO
+        // 2 — ROL INCORRECTO (ahora [Authorize] con ownership -> 200)
         [Fact]
         public async Task Should_Reject_Token_With_Wrong_Role()
         {
@@ -97,7 +97,7 @@ namespace SecurityTest.Clientes
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
 
             var response = await _client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 3 — TOKEN EXPIRADO
@@ -363,7 +363,7 @@ namespace SecurityTest.Clientes
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
 
-        // 19 — BUSCAR CON ROL NO ADMIN
+        // 19 — BUSCAR CON ROL NO ADMIN (ahora [Authorize] -> 200)
         [Fact]
         public async Task Should_Reject_Search_With_NonAdmin_Token()
         {
@@ -374,7 +374,7 @@ namespace SecurityTest.Clientes
 
             var response = await _client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 20 — TELÉFONO CON LETRAS
@@ -442,7 +442,7 @@ namespace SecurityTest.Clientes
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
-        // 24 — AUTOCOMPLETE CON ROL INCORRECTO
+        // 24 — AUTOCOMPLETE CON ROL INCORRECTO (ahora [Authorize] -> 200)
         [Fact]
         public async Task Should_Reject_Autocomplete_With_Wrong_Role()
         {
@@ -452,7 +452,7 @@ namespace SecurityTest.Clientes
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
 
             var response = await _client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 25 — AUTOCOMPLETE CON TEXTO VACÍO

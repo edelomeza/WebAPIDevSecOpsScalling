@@ -36,7 +36,7 @@ public class TipoEmpleadoController : ControllerBase
     /// <response code="200">Tipos de empleado obtenidos correctamente.</response>
     /// <response code="401">No autenticado.</response>
     [HttpGet]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<EmpCatTipoEmpleadoDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -56,7 +56,7 @@ public class TipoEmpleadoController : ControllerBase
     /// <response code="401">No autenticado.</response>
     /// <response code="404">Tipo de empleado no encontrado.</response>
     [HttpGet("{id}")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(EmpCatTipoEmpleadoDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

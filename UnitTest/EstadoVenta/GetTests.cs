@@ -1,17 +1,36 @@
 using FluentAssertions;
+using Moq;
 using UnitTest.Common;
 using WebAPIDevSecOps.Controllers;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 
 namespace UnitTest.EstadoVenta;
 
 public class GetTests
 {
+    private readonly Mock<ICacheService> _cacheMock;
+
+    public GetTests()
+    {
+        _cacheMock = new Mock<ICacheService>();
+        _cacheMock
+            .Setup(x => x.GetOrCreateAsync(
+                It.IsAny<string>(),
+                It.IsAny<Func<Task<PagedResult<VenCatEstadoDto>>>>(),
+                It.IsAny<TimeSpan?>()))
+            .Returns<string, Func<Task<PagedResult<VenCatEstadoDto>>>, TimeSpan?>(
+                (_, factory, _) => factory());
+        _cacheMock
+            .Setup(x => x.GetAsync<VenCatEstadoDto>(It.IsAny<string>()))
+            .ReturnsAsync((VenCatEstadoDto?)null);
+    }
+
     private EstadoVentaController CreateController(AppDbContext context)
     {
-        return new EstadoVentaController(new WebAPIDevSecOps.Services.VenCatEstadoService(context));
+        return new EstadoVentaController(new WebAPIDevSecOps.Services.VenCatEstadoService(context, _cacheMock.Object));
     }
 
     [Fact]

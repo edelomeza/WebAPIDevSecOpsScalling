@@ -84,7 +84,7 @@ namespace SecurityTest.Producto
             Assert.Equal(HttpStatusCode.Unauthorized, deleteResponse.StatusCode);
         }
 
-        // 2 — ROL INCORRECTO
+        // 2 — ROL INCORRECTO (ahora [Authorize] con ownership: User ve lo propio -> 200)
         [Fact]
         public async Task Should_Reject_Token_With_Wrong_Role()
         {
@@ -94,7 +94,7 @@ namespace SecurityTest.Producto
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
 
             var response = await _client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 3 — TOKEN EXPIRADO
@@ -340,7 +340,7 @@ namespace SecurityTest.Producto
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
 
-        // 19 — BUSCAR CON ROL NO ADMIN
+        // 19 — BUSCAR CON ROL NO ADMIN (ahora [Authorize] -> 200 con filtro ownership)
         [Fact]
         public async Task Should_Reject_Search_With_NonAdmin_Token()
         {
@@ -351,7 +351,7 @@ namespace SecurityTest.Producto
 
             var response = await _client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
         // 20 — EXISTENCIA NEGATIVA

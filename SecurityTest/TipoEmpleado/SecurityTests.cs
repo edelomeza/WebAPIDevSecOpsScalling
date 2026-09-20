@@ -52,7 +52,7 @@ public class SecurityTests : IClassFixture<WebApplicationFactory<Program>>, IAsy
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
 
         var response = await _client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

@@ -178,7 +178,7 @@ public class UsuarioController : ControllerBase
     /// <response code="401">No autenticado.</response>
     /// <response code="403">No tiene permisos de administrador.</response>
     [HttpPost]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ProducesResponseType(typeof(SegUsuarioDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

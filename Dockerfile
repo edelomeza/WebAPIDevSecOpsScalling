@@ -28,6 +28,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 
 COPY --from=publish /app/publish .
 
+# Healthcheck tool: curl no viene en aspnet:10.0 (ver AGENTS Fase6) — instalar para docker-compose healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Allow overriding the runtime user via build-arg. Default to UID 1000.
 ARG APP_UID=1000
 # Create a non-root user with the requested UID and make /app owned by it.

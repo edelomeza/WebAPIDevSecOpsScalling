@@ -22,7 +22,7 @@ public class ProductoController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<ProProductoDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -34,7 +34,7 @@ public class ProductoController : ControllerBase
     }
 
     [HttpGet("buscar")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize]
     [ResponseCache(NoStore = true)]
     [ProducesResponseType(typeof(PagedResult<ProProductoDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

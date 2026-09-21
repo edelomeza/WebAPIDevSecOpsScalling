@@ -550,7 +550,15 @@ if (!app.Environment.IsDevelopment())
 
 app.UseCors("SecurePolicy");
 app.UseForwardedHeaders();
-app.UseHttpsRedirection();
+// En Producción detrás de ALB+CloudFront (Origin http-only) el esquema llega como http aunque el viewer sea https.
+// CloudFront ya hace ViewerProtocolPolicy redirect-to-https en el edge, por lo que redirigir de nuevo en la app
+// provoca 307/loop y los GET con Authorization pierden el header al seguir el redirect (POSTs no cacheados parecen ok
+// pero GetAll/autocomplete fallan uniformemente vía https://d38h... mientras http://ALB:80 funciona).
+// Solo redirigir en Development (localhost:7227 con cert dev); en Production el edge ya asegura https.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseMiddleware<WebAPIDevSecOps.Middleware.CorrelationIdMiddleware>();
 app.UseMiddleware<WebAPIDevSecOps.Middleware.RequestTimeoutMiddleware>();

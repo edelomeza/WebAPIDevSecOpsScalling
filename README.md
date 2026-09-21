@@ -374,6 +374,42 @@ cron (02:30 UTC) → chaos-nightly (Redis/SQL kill + latency experiments)
 
 ---
 
+## Lessons Learned & DevSecOps Best Practices
+
+> Synthesis of empirical findings consolidated in [`agent.md`](agent.md) and [`AGENTS.md`](AGENTS.md) (Phases 4-6). Presented as generalizable practices — no sensitive values are exposed (keys, hosts, registries or secrets are shown as placeholders like `<JWT_KEY_32B>`, `<REGISTRY_IMAGE>`, `<DB_HOST>`).
+
+### DevSecOps Principles Applied
+
+| Pillar | Practice Applied in This Project | Validated Lesson |
+|---|---|---|
+| **Shift-Left / Quality Gates** | Mutation score as primary gate (not just line coverage) | 46% line coverage != 66% initial mutation score; the real score is `(Killed+Timeout)/(Killed+Timeout+Survived+NoCoverage)` excluding `CompileError` — the reliable indicator of test effectiveness |
+| **Threshold Management** | Thresholds measured from real data | A 75% gate with 46% actual was never detected because the previous step failed first; set thresholds after measuring (current `>=45%`) and parameterize in a single source (script + workflow) |
+| **SAST / SCA / Container** | SonarCloud + Semgrep (15 custom rules) + Trivy + Dockle + Cosign keyless signing | Version `upload-artifact`/`download-artifact` as a pair (v7), validate scanner breaking changes (`dotnet-sonarscanner /n:` vs `/d:`), keep Dockle `accept-key` versioned when base images change (`ASPNETCORE_HTTP_PORTS`) |
+| **Secrets Management** | `appsettings.json` gitignored, `appsettings.Example.json` with placeholders | Never version secrets; validate env vars byte-for-byte (hidden CRLF breaks URLs), use `Jwt__Key=<32B base64 via openssl rand -base64 32>` and `ConnectionStrings__DefaultConnection=<SQL connection>` via `__` double-underscore convention |
+| **Testing at Scale** | 6 suites + Pact + Stryker + NBomber + FsCheck + Testcontainers | Stryker takes ~2h30-2h45 -> CI timeout 180 min; `WebApplicationFactory` forces TestServer -> Pact requires a real process on a free port with `wait /health` and tree kill; `pactSpecification 3.0` flat `{"match":"type"}` |
+| **Performance** | NBomber 6.5 without step weights -> probabilistic `RandomNumberGenerator` selection | Relax `RateLimiting` in perf env (`LoginPolicy`, `AdminPolicy`, `ConcurrentWritesPolicy`) and reuse JWT via `WithInit` to avoid Argon2id bursts (CPU bottleneck: ~42 verifies/s, ~64MB each) |
+| **Observability** | OpenTelemetry + Prometheus `/metrics` + Grafana `deploy/grafana/quality-dashboard.json` | Eagerly resolve metrics (`GetRequiredService<QualityMetricsService>()` after `Build()`), verify exported names (`curl /metrics`: `mutation_score_percent`, `p95_latency_ms_milliseconds` with unit suffixes) before PromQL; `OpenTelemetry.Exporter.Prometheus.AspNetCore` is prerelease-only (pin `1.17.0-beta.1`) |
+| **Resilience / Chaos** | `ChaosTest` kill/latency + circuit breaker + Redis fallback to `IMemoryCache` | Tune `StackExchange.Redis` (`AbortOnConnectFail=false`, `AsyncTimeout=500ms`, `ExponentialRetry`) for fallback <500ms; separate `reports/` (chaos) from `perf-reports/` (NBomber clears its folder on start); `WithMaxFailCount(10M)` prevents premature aborts |
+| **Pipeline Hardening** | Aggregator job `hardening-report` + `PR Quality Gate` | Use `needs + if: always() + continue-on-error + if-no-files-found: warn` to consolidate reports that exist per event (PR: Semgrep+ZAP-PR vs push: Trivy+Dockle+ZAP); defensive parsing (`utf-8-sig` for BOM, separate `try/except` for `load` vs counting) |
+| **Culture / Process** | Branch protection requires 1 approving review, `paths-ignore **.md` | Measure real runtimes before setting timeouts, document known limits (unkillable mutants: `Include` INNER JOIN, non-injectable RNG) instead of hacks, validate YAML/scripts locally (`yaml.safe_load`, fixtures) before merging |
+
+### Rules for the Future (Checklist)
+
+1. **Verify empirically** metric names, report formats (`dockle: [{code,level}]`, `Trivy SARIF: runs[].results[]`, `ZAP: site[].alerts[]`, `Semgrep: results[]`) and config semantics before writing dashboards/parsers.
+2. **Measure before gating:** timeouts and coverage are set from real runs, not desired targets.
+3. **Isolate static state:** `Reset()` in constructor + `lock` for static chains (`TokenBlacklist`, `AuditHashChain`); eagerly resolve metric singletons.
+4. **Validate release status:** document prerelease exceptions and review changelogs on every image/scanner bump.
+5. **Boundary-exact tests:** `>=`/`<`, exception messages, both RNG branches deterministically; `Trim()` comparisons with FsCheck.
+6. **Tools requiring a real socket:** launch a real process + free port + cleanup in `finally` (`taskkill /PID /T /F` on Windows, `pkill -TERM -P` on Linux).
+7. **Robust scripts:** `0/false + WARN` fallbacks, `LC_NUMERIC=C`, `mktemp`/`mv` atomic writes.
+8. **Defensive `.gitignore`:** ignore local run artifacts at repo root (`reports/`, `StrykerOutput/`, `perf-reports/`), do not rely on tool-generated nested `.gitignore` files.
+9. **Version actions as a pair** and consolidate reports with tolerance for missing artifacts per event.
+10. **Discriminate rig vs SUT** on `verify FAIL status 0`: manual probe `-UseBasicParsing`, control group without fault, logs as liveness proof, check for stacked processes — only then investigate the SUT.
+
+> Full detail and evidence per phase in [`agent.md`](agent.md) — this summary focuses on transferable practices without exposing deployment-sensitive data.
+
+---
+
 ## Testing
 
 ```powershell

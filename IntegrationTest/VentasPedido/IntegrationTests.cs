@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using UnitTest.Common;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
+using WebAPIDevSecOps.Interfaces;
 using WebAPIDevSecOps.Models;
 
 namespace IntegrationTest.VentasPedido;
@@ -26,6 +27,21 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
             builder.UseSetting("Jwt:Audience", JwtTestConfig.Audience);
             builder.UseSetting("UseInMemoryDatabase", "true");
             builder.UseSetting("InMemoryDatabaseName", $"VentasPedidoTestDb_{Guid.NewGuid():N}");
+            builder.ConfigureServices(services =>
+            {
+                // Aísla los consumers MassTransit: el evento nunca llega al bus in-memory
+                // y ningún consumer transiciona el pedido. Sin esto, CrearPedidoAsync
+                // publica y luego re-lee (GetByIdAsync); si la cadena
+                // StockValidado->Pagado->Facturado gana la carrera, el POST devuelve un
+                // estado avanzado y Create_ValidDto_ReturnsCorrectData flakea en CI.
+                // Nota: si un futuro test de esta clase requiere transiciones reales,
+                // debe usar su propia factory sin este reemplazo.
+                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IEventPublisher));
+                if (descriptor is not null)
+                    services.Remove(descriptor);
+
+                services.AddScoped<IEventPublisher, NullEventPublisher>();
+            });
         });
         _client = _factory.CreateClient();
     }
@@ -41,6 +57,11 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
     public Task DisposeAsync() => Task.CompletedTask;
 
     private string AdminToken => JwtTestConfig.AdminToken;
+
+    private sealed class NullEventPublisher : IEventPublisher
+    {
+        public Task PublishAsync<T>(T eventMessage) where T : class => Task.CompletedTask;
+    }
 
     private async Task<(int clienteId, int productoId)> SeedDependenciesAsync()
     {

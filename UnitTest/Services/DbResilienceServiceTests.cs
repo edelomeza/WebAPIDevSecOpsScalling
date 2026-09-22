@@ -51,7 +51,10 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Opens_After_MinimumThroughput_Failures()
     {
-        var (service, logger) = CreateService();
+        // Break largo (30s): el assert de rechazo inmediato queda libre de flake
+        // de scheduling sin añadir tiempo (no se espera al break). Este test es el
+        // único que cubre "rechaza mientras está abierto"; los demás no lo duplican.
+        var (service, logger) = CreateService(breakDurationSeconds: 30);
 
         var dbMock = CreateDbContextMock();
         dbMock.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -75,7 +78,10 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Closes_After_HalfOpen_Success()
     {
-        var (service, logger) = CreateService(breakDurationSeconds: 2);
+        // Sin assert intermedio de BrokenCircuit: con break corto, un stall del runner
+        // mayor al break deja entrar la llamada como trial half-open (flake "No exception
+        // was thrown"). El rechazo en abierto ya lo cubre Opens_After_MinimumThroughput.
+        var (service, logger) = CreateService(breakDurationSeconds: 3);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -92,10 +98,9 @@ public class DbResilienceServiceTests
         await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
             TimeSpan.FromSeconds(5), "circuito abierto tras mínimo de fallos");
 
-        await Assert.ThrowsAsync<BrokenCircuitException>(() =>
-            service.SaveChangesAsync(dbMock.Object));
-
-        await Task.Delay(2500);
+        // Delay > break en dirección segura (los delays no disparan antes; llegar tarde
+        // al trial no rompe nada): la siguiente llamada es el trial half-open.
+        await Task.Delay(3500);
 
         var result = await service.SaveChangesAsync(dbMock.Object);
         Assert.Equal(1, result);
@@ -108,7 +113,10 @@ public class DbResilienceServiceTests
     [Fact]
     public async Task CircuitBreaker_Reopens_After_HalfOpen_Failure()
     {
-        var (service, logger) = CreateService(breakDurationSeconds: 2);
+        // Sin asserts inmediatos de BrokenCircuit (mismo race que Closes_After_HalfOpen_Success,
+        // cubiertos por Opens_After_MinimumThroughput). El re-open se prueba de forma
+        // determinista con WaitUntil(Open) + "abierto Exactly(2)" en logs.
+        var (service, logger) = CreateService(breakDurationSeconds: 3);
 
         var dbMock = CreateDbContextMock();
         dbMock.SetupSequence(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
@@ -125,19 +133,13 @@ public class DbResilienceServiceTests
         await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
             TimeSpan.FromSeconds(5), "circuito abierto tras mínimo de fallos");
 
-        await Assert.ThrowsAsync<BrokenCircuitException>(() =>
-            service.SaveChangesAsync(dbMock.Object));
-
-        await Task.Delay(2500);
+        await Task.Delay(3500);
 
         await Assert.ThrowsAsync<DbUpdateException>(() =>
             service.SaveChangesAsync(dbMock.Object));
 
         await WaitUntilAsync(() => service.CircuitState == CircuitState.Open,
             TimeSpan.FromSeconds(5), "circuito reabierto tras fallo en half-open");
-
-        await Assert.ThrowsAsync<BrokenCircuitException>(() =>
-            service.SaveChangesAsync(dbMock.Object));
 
         LogVerifier.VerifyLog(logger, LogLevel.Information, "Circuit breaker en modo half-open", Times.Once());
         LogVerifier.VerifyLog(logger, LogLevel.Warning, "Circuit breaker abierto", Times.Exactly(2));

@@ -33,6 +33,11 @@ Parameters:
     Type: String
     Default: 188.40.211.8
     Description: Host/IP BD externa Hetzner (Only B, sin RDS)
+  SagaBridgeEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Flag Feature:SagaBridge en prod (dual-write VenVenta->VenPedido espejo). Trazabilidad en stack; inyeccion runtime via SAGA_BRIDGE en deploy-app.sh/docker-compose.aws.yml
 
 Mappings:
   RegionMap:
@@ -427,6 +432,9 @@ Outputs:
   ExternalDbHostUsed:
     Description: Host BD externa Only B (188.40.211.8/db45497)
     Value: !Ref ExternalDbHost
+  SagaBridgeEnabledUsed:
+    Description: Flag SagaBridge declarado en stack (runtime via SAGA_BRIDGE/deploy-app.sh)
+    Value: !Ref SagaBridgeEnabled
   RDSAddress:
     Description: Alias compatibilidad (externa)
     Value: !Ref ExternalDbHost

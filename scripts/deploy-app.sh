@@ -58,6 +58,9 @@ fi
 SKIP_MIGRATION="${SKIP_MIGRATION:-}"
 if [[ "$RDS_ADDRESS" == "188.40.211.8" ]]; then SKIP_MIGRATION="true"; fi
 DB_NAME="${DB_NAME:-db45497}"
+# SagaBridge ON permanente en prod (inyecta Feature__SagaBridge al compose via SSM).
+# Reversible sin rebuild: SAGA_BRIDGE=false bash scripts/deploy-app.sh <stack> <tag>
+SAGA_BRIDGE="${SAGA_BRIDGE:-true}"
 
 # EC2 InstanceId via tag cloudformation stack-name (SSM Zero Trust, sin 22/pem)
 EC2_ID=$(aws ec2 describe-instances --region "$REGION" --filters "Name=tag:aws:cloudformation:stack-name,Values=$STACK" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text 2>/dev/null || true)
@@ -139,7 +142,7 @@ fi
 
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && ( /usr/bin/docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown para ${REGISTRY_IMAGE}:$TAG - verifica ci-cd.yml changes job y que la imagen fue publicada\" >&2; exit 1; }) && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown retry\" >&2; exit 1; } && docker compose -f docker-compose.aws.yml up -d && docker ps)"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION SAGA_BRIDGE=$SAGA_BRIDGE DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && ( /usr/bin/docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown para ${REGISTRY_IMAGE}:$TAG - verifica ci-cd.yml changes job y que la imagen fue publicada\" >&2; exit 1; }) && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown retry\" >&2; exit 1; } && docker compose -f docker-compose.aws.yml up -d && docker ps)"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"

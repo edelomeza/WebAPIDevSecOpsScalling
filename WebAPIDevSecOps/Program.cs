@@ -312,12 +312,16 @@ builder.Services.AddRateLimiter(options =>
 
 static string GetAllowedOrigin(IConfiguration config)
 {
-    var origin = config["Cors:AllowedOrigin"];
+    // 12-Factor: el env var manda (inyectado vía GH vars CORS_ALLOWED_ORIGIN en prod).
+    // Antes el appsettings.Production.json traía un texto PLACEHOLDER no vacío que
+    // ganaba siempre y el env nunca se consultaba -> preflight 204 sin ACAO -> frontend bloqueado.
+    var origin = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN");
     if (!string.IsNullOrWhiteSpace(origin))
         return origin;
 
-    origin = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGIN");
-    if (!string.IsNullOrWhiteSpace(origin))
+    origin = config["Cors:AllowedOrigin"];
+    if (!string.IsNullOrWhiteSpace(origin)
+        && !origin.StartsWith("PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
         return origin;
 
     return "https://localhost:5097";

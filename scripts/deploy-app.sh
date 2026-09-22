@@ -115,9 +115,31 @@ else
 fi
 echo "[deploy-app] JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE"
 
+# Preflight: verificar que la imagen TAG existe en Docker Hub antes de SSM (evita manifest unknown tardio)
+REGISTRY_IMAGE="${REGISTRY_IMAGE:-edelomeza/webapidevsecops-scalling}"
+echo "[deploy-app] Preflight: verificando imagen ${REGISTRY_IMAGE}:${TAG} en Docker Hub..."
+# Intenta Hub API publica; si falla intenta docker manifest inspect local
+if curl -sf "https://registry.hub.docker.com/v2/repositories/${REGISTRY_IMAGE}/tags/${TAG}" >/dev/null 2>&1; then
+  echo "[deploy-app] Preflight OK: imagen ${REGISTRY_IMAGE}:${TAG} existe (Hub API)"
+else
+  if command -v docker >/dev/null 2>&1 && docker manifest inspect "${REGISTRY_IMAGE}:${TAG}" >/dev/null 2>&1; then
+    echo "[deploy-app] Preflight OK: imagen ${REGISTRY_IMAGE}:${TAG} existe (docker manifest inspect)"
+  elif command -v docker >/dev/null 2>&1 && docker buildx imagetools inspect "${REGISTRY_IMAGE}:${TAG}" >/dev/null 2>&1; then
+    echo "[deploy-app] Preflight OK: imagen ${REGISTRY_IMAGE}:${TAG} existe (buildx imagetools)"
+  else
+    echo "[deploy-app] ERROR: imagen ${REGISTRY_IMAGE}:${TAG} no encontrada (manifest unknown)" >&2
+    echo "[deploy-app] Causa probable: commit solo .md sin build Docker (antes filtrado por paths-ignore) o push de CI fallo" >&2
+    echo "[deploy-app] Accion inmediata (trazabilidad): re-ejecutar CI/CD con workflow_dispatch para ese SHA o usar ultimo SHA con codigo:" >&2
+    echo "  git log --oneline origin/main --diff-filter=AM -- '**.cs' 'Dockerfile' 'deploy/**' '.github/workflows/**' | head -5" >&2
+    echo "  # Luego: bash scripts/deploy-app.sh $STACK <ultimo-sha-con-codigo>" >&2
+    echo "[deploy-app] Alternativa trazable: gh workflow run \"CI/CD Pipeline\" --ref main  # reconstruye ${TAG} si es HEAD" >&2
+    exit 1
+  fi
+fi
+
 # Deploy via SSM con env inyectados (NoEcho via GH Secrets -> env)
 echo "[deploy-app] docker compose pull + up -d via SSM (Tag=$TAG)..."
-SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && /usr/bin/docker compose -f docker-compose.aws.yml pull && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull && docker compose -f docker-compose.aws.yml up -d && docker ps)"
+SSM_CMD="export TAG=$TAG STACK_NAME=$STACK AWS_REGION=$REGION RDS_ADDRESS=$RDS_ADDRESS DB_NAME=$DB_NAME SKIP_MIGRATION=$SKIP_MIGRATION DB_USER=$DB_USER DB_PASSWORD='$DB_PASSWORD' JWT_KEY_PROD='$JWT_KEY_PROD' ALB_DNS=$ALBDNS CLOUDFRONT_DOMAIN=$CLOUDFRONT_DOMAIN CORS_ALLOWED_ORIGIN='$CORS_ALLOWED_ORIGIN' JWT_ISSUER=$JWT_ISSUER JWT_AUDIENCE=$JWT_AUDIENCE StackName=$STACK STACK_NAME=$STACK && cd /home/ec2-user && ( /usr/bin/docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown para ${REGISTRY_IMAGE}:$TAG - verifica ci-cd.yml changes job y que la imagen fue publicada\" >&2; exit 1; }) && /usr/bin/docker compose -f docker-compose.aws.yml up -d && /usr/bin/docker ps || (docker compose -f docker-compose.aws.yml pull || { echo \"ERROR: manifest unknown retry\" >&2; exit 1; } && docker compose -f docker-compose.aws.yml up -d && docker ps)"
 # Escapar comillas para send-command
 ESCAPED=$(printf '%s' "$SSM_CMD" | sed 's/"/\\"/g')
 ssm_run "docker compose up" "$ESCAPED"

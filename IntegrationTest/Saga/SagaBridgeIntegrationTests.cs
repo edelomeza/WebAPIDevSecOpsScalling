@@ -250,8 +250,15 @@ public class SagaBridgeIntegrationTests : IClassFixture<WebApplicationFactory<Pr
         var republishResponse = await _client.SendAsync(republishRequest);
         republishResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var estadoFinal = await WaitForTerminalStateAsync(pedidoId);
+        // Dar margen al bus InMemory bajo instrumentación de cobertura antes de sondear.
+        await Task.Delay(500);
+
+        // Timeout ampliado: con XPlat Code Coverage el bus InMemory tarda más en consumir.
+        var estadoFinal = await WaitForTerminalStateAsync(pedidoId, timeoutSeconds: 30);
         estadoFinal.Should().BeOneOf("Facturado", "CompensadoPago", "CompensadoFactura");
-        (await GetStockAsync(productoId)).Should().Be(98);
+
+        // Facturado = descuento neto 1x; Compensado = la compensación restauró el stock (correcto).
+        var stockEsperado = estadoFinal == "Facturado" ? 98 : 100;
+        (await GetStockAsync(productoId)).Should().Be(stockEsperado);
     }
 }

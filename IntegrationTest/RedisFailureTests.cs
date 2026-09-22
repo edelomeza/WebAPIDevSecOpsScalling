@@ -11,10 +11,11 @@ using UnitTest.Common;
 
 namespace IntegrationTest;
 
-public class RedisFailureTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime
+public class RedisFailureTests : IClassFixture<WebApplicationFactory<Program>>, IAsyncLifetime, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private HttpClient _client = null!;
+    private bool _disposed;
 
     public RedisFailureTests(WebApplicationFactory<Program> factory)
     {
@@ -55,7 +56,22 @@ public class RedisFailureTests : IClassFixture<WebApplicationFactory<Program>>, 
         await db.SaveChangesAsync();
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public Task DisposeAsync()
+    {
+        // PostDespliegue9 Fase 1: liberar el HttpClient por clase; la factoría (IClassFixture) la gestiona xUnit.
+        // Null-guard para evitar NullReferenceException durante xUnit Test Class Cleanup con Coverlet.
+        try { _client?.Dispose(); } catch { /* ignore */ }
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        // Null-guard para evitar NullReferenceException durante xUnit Test Class Cleanup (IClassFixture)
+        try { _client?.Dispose(); } catch { /* ignore */ }
+        GC.SuppressFinalize(this);
+    }
 
     [Fact]
     public async Task Login_Should_Succeed_When_Redis_Is_Down()

@@ -27,6 +27,7 @@ aws cloudformation deploy \
     DBPassword="$DB_PASSWORD" \
     ExternalDbHost="${RDS_ADDRESS:-188.40.211.8}" \
     DBName="${DB_NAME:-db45497}" \
+    SagaBridgeEnabled="${SAGA_BRIDGE:-true}" \
     CorsAllowedOrigin="${CORS_ALLOWED_ORIGIN:-}" \
     AcmCertificateArn="${ACM_CERTIFICATE_ARN:-}" \
   --no-fail-on-empty-changeset

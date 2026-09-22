@@ -44,6 +44,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-db45497}
       - SKIP_MIGRATION=${SKIP_MIGRATION:-true}
+      # SagaBridge ON permanente en prod: dual-write VenVenta->VenPedido espejo (VentaService/VentaDetalleService leen Feature:SagaBridge; __ mapea a :)
+      - Feature__SagaBridge=${SAGA_BRIDGE:-true}
       - STACK_NAME=${STACK_NAME:-webapidevsecops-prod}
       - StackName=${STACK_NAME:-webapidevsecops-prod}
     healthcheck:

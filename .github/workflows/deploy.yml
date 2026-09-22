@@ -42,6 +42,7 @@ jobs:
           RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
           DB_NAME: ${{ vars.DB_NAME }}
           EXTERNAL_DB_HOST: ${{ vars.RDS_ADDRESS }}
+          SAGA_BRIDGE: ${{ vars.SAGA_BRIDGE || 'true' }}
 
       - name: Deploy app via SSM (sin 22/pem)
         run: bash scripts/deploy-app.sh webapidevsecops-prod "${{ inputs.tag || github.sha }}"
@@ -54,6 +55,7 @@ jobs:
           RDS_ADDRESS: ${{ vars.RDS_ADDRESS }}
           DB_NAME: ${{ vars.DB_NAME }}
           SKIP_MIGRATION: "true"
+          SAGA_BRIDGE: ${{ vars.SAGA_BRIDGE || 'true' }}
 
       - name: Smoke health check
         run: |

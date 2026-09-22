@@ -32,7 +32,7 @@ namespace UnitTest.VentasPedido
         private static VentasPedidoService CreateService(AppDbContext context, out Mock<IEventPublisher> eventPublisherMock)
         {
             eventPublisherMock = new Mock<IEventPublisher>();
-            return new VentasPedidoService(context, CreateDbResilience(), eventPublisherMock.Object);
+            return new VentasPedidoService(context, CreateDbResilience(), eventPublisherMock.Object, Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentasPedidoService>>());
         }
 
         private static async Task<(CliCliente cliente, ProProducto producto1, ProProducto producto2)> SeedDependenciesAsync(AppDbContext context)

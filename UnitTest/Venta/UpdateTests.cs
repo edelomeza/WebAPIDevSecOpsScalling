@@ -31,7 +31,7 @@ namespace UnitTest.Venta
 
         private VentaController CreateController(AppDbContext context)
         {
-            return new VentaController(new VentaService(context, _dbResilience));
+            return new VentaController(new VentaService(context, _dbResilience, Moq.Mock.Of<WebAPIDevSecOps.Interfaces.IEventPublisher>(), SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaService>>()));
         }
 
         private async Task<(CliCliente cliente, SegUsuario usuario, VenCatEstado estado1, VenCatEstado estado2)> SeedDependenciesAsync(AppDbContext context)

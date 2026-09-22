@@ -29,7 +29,7 @@ namespace UnitTest.Venta
 
         private static VentaService CreateService(AppDbContext context)
         {
-            return new VentaService(context, CreateDbResilience());
+            return new VentaService(context, CreateDbResilience(), Moq.Mock.Of<WebAPIDevSecOps.Interfaces.IEventPublisher>(), SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaService>>());
         }
 
         [Fact]

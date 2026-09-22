@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Interfaces;
@@ -13,14 +15,26 @@ namespace WebAPIDevSecOps.Services
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
         private readonly IUserAccessor _userAccessor;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<VentaDetalleService> _logger;
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _productLocks = new();
 
-        public VentaDetalleService(AppDbContext context, DbResilienceService dbResilience, IUserAccessor userAccessor)
+        public VentaDetalleService(
+            AppDbContext context,
+            DbResilienceService dbResilience,
+            IUserAccessor userAccessor,
+            IConfiguration configuration,
+            ILogger<VentaDetalleService> logger)
         {
             _context = context;
             _dbResilience = dbResilience;
             _userAccessor = userAccessor;
+            _configuration = configuration;
+            _logger = logger;
         }
+
+        private bool IsSagaBridgeEnabled() =>
+            _configuration.GetValue<bool>("Feature:SagaBridge");
 
         private async Task AssertOwnershipAsync(VenVentaDetalle detalle)
         {
@@ -126,7 +140,14 @@ namespace WebAPIDevSecOps.Services
                     throw new ArgumentException("El producto no tiene las suficientes existencias.");
                 }
 
-                producto.intNumeroExistencia -= dto.intPiezaVenta;
+                // PostDespliegue9 (criterio 9): la saga es el único propietario del decremento.
+                // Con el puente activo NO se descuenta aquí; lo hará StockValidatorConsumer al finalizar (PUT 1->2).
+                // Con el puente apagado se mantiene el comportamiento legacy exacto.
+                var sagaBridge = IsSagaBridgeEnabled();
+                if (!sagaBridge)
+                {
+                    producto.intNumeroExistencia -= dto.intPiezaVenta;
+                }
 
                 var detalle = new VenVentaDetalle
                 {
@@ -137,6 +158,31 @@ namespace WebAPIDevSecOps.Services
                 };
 
                 _context.Set<VenVentaDetalle>().Add(detalle);
+
+                // PostDespliegue9 (criterio 5): dual-write del detalle. Misma unidad de trabajo.
+                // Criterio "no crear tardío silencioso": si falta el pedido espejo es inconsistencia
+                // (POST /venta no creó el espejo) -> fallar con diagnóstico, no ocultar.
+                if (sagaBridge)
+                {
+                    var pedido = await _context.Set<VenPedido>()
+                        .FirstOrDefaultAsync(p => p.LegacyVentaId == dto.idVenVenta);
+                    if (pedido == null)
+                    {
+                        _logger.LogError("SagaBridge: detalle para venta {VentaId} sin pedido espejo; inconsistencia dual-write", dto.idVenVenta);
+                        throw new InvalidOperationException($"Inconsistencia SagaBridge: la venta {dto.idVenVenta} no tiene pedido espejo.");
+                    }
+
+                    var pedidoDetalle = new VenPedidoDetalle
+                    {
+                        idVenPedido = pedido.id,
+                        idProProducto = dto.idProProducto,
+                        intCantidad = dto.intPiezaVenta,
+                        decPrecioUnitario = producto.decPrecio,
+                    };
+                    _context.Set<VenPedidoDetalle>().Add(pedidoDetalle);
+                    pedido.decTotal += dto.intPiezaVenta * producto.decPrecio;
+                }
+
                 await _dbResilience.SaveChangesAsync(_context);
 
                 return (await GetByIdAsync(detalle.id))!;

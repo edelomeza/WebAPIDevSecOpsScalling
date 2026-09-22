@@ -34,7 +34,7 @@ namespace UnitTest.VentaDetalle
             var userMock = new Mock<IUserAccessor>();
             userMock.Setup(u => u.GetCurrentUsername()).Returns("Test User");
             return new VentaDetalleController(
-                new VentaDetalleService(context, _dbResilience, userMock.Object));
+                new VentaDetalleService(context, _dbResilience, userMock.Object, SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaDetalleService>>()));
         }
 
         private AppDbContext SeedProductos(params (string nombre, int existencia, decimal precio)[] productos)

@@ -29,6 +29,17 @@
 - **Verificación:** Unit `613/613`, Integ `358/361` (3 RecoveryTests exigen Docker), Sec `136/136`. Ajuste fixtures legacy a BridgeOff explícito (`Venta/UpdateTests`, `RaceConditionTests`) + `StockValidatorConsumerTests` estado Pendiente y PedidoNoExiste → no-op.
 - **Coverage fix** `RedisFailureTests.cs:14 IDisposable` + null-guard + factory esqueleteada `RedisFailureTestsFactory.cs` (dbName en ctor, sin `IDisposable` propio) — suite `361` con XPlat Code Coverage ya no `[Cleanup Failure]`.
 
+## 5. Lecciones PostDespliegue11 — tests deterministas (cierre flake `Create_ValidDto_ReturnsCorrectData`)
+
+1. **Tests deterministas: aislar el no-determinismo en la frontera** — El flake venía de una carrera real (`PublishAsync` → consumers in-process → `GetByIdAsync`). En vez de parchar el síntoma con reintentos o `Task.Delay`, se eliminó la fuente de no-determinismo sustituyendo `IEventPublisher` por un no-op en la factory de la clase. Principio: un test que depende del scheduler no es un test, es un sorteo.
+2. **Seguir el precedente del repo, no inventar mecanismos** — Se usó `ConfigureServices` + remover descriptor + re-registrar, el patrón exacto ya establecido en `RedisFailureTestsFactory.cs:37-44`. (El primer intento con `ConfigureTestServices` ni compiló — se corrigió al estándar del codebase en vez de forzar algo ajeno.)
+3. **Diseñar para la sustituibilidad (seam)** — Funcionó sin tocar producción porque el código ya dependía de la abstracción `IEventPublisher` (una sola firma `PublishAsync<T>`), no de MassTransit directamente. La inversión de dependencias pagó su dividendo en testeabilidad.
+4. **Blast radius mínimo** — Un archivo, +21 líneas, cero cambios en prod, cero cambios en otras suites. La cobertura E2E real de la saga sigue intacta en `SagaBridgeIntegrationTests` (otra clase).
+5. **No romper lo que ya era tolerante** — Antes de aislar, se verificó que ningún test de la clase dependiera de transiciones por consumers (los asserts de estado ya eran `BeOneOf`). Con consumers aislados los pedidos siempre quedan `Pendiente`: todo se volvió más determinista, nada se debilitó.
+6. **Documentar el porqué, no solo el qué** — El comentario en el código explica la carrera, cita la cadena (`StockValidado→Pagado→Facturado`) y deja guía futura: si alguien necesita transiciones reales, debe usar su propia factory. Regla del repo (AGENTS.md #5): documentar límites en vez de hackear.
+7. **Verificación empírica antes de declarar victoria** — Build 0 errores + clase 5×16/16 + suite 358/358. Y honestidad ambiental: `RecoveryTests` se excluyó localmente por falta de Docker (corren en CI), declarado en vez de oculto.
+8. **Un PR por preocupación** — Rama nueva (`PostDespliegue11`) en vez de contaminar el PR #80 en revisión (fix del circuit-breaker). Historial lineal y reversible por tema.
+
 ---
 
 **En síntesis:** Legacy = fachada compatible; `VenPedido` = representación saga; `PUT 2` = señal de cierre; saga = owner de stock/compensación; CI traza artefacto, preflight fail-fast, flag y recuperación hacen el puente reversible.

@@ -87,3 +87,110 @@ GO
 -- SELECT v.id AS VentaHuerfana, v.dteFechaHoraCompra
 -- FROM [VenVenta] v LEFT JOIN [VenPedido] p ON p.[LegacyVentaId] = v.id
 -- WHERE p.id IS NULL;
+GO
+
+-- 6. Barrido total de huérfanas en Estado 1 (idVenCatEstado = 1, "En compra usuario").
+--    Ventana de mantenimiento 10-15 min, con UI congelada (cambio de semántica de stock).
+--    Idempotente y re-ejecutable: salta ventas sin detalles (no hay espejo que crear;
+--    el finalize PUT 1->2 las rechaza por diseño) y no duplica por IF NOT EXISTS +
+--    índice único IX_VenPedido_LegacyVentaId. Un fallo por venta no aborta el lote.
+--    Uso: mismo sqlcmd que la sección 0-3, sin parámetros.
+IF COL_LENGTH('VenPedido', 'LegacyVentaId') IS NULL
+BEGIN
+    RAISERROR('Backfill total abortado: falta columna VenPedido.LegacyVentaId. Aplicar PostDespliegue9_LegacyVentaId.sql primero.', 16, 1);
+    RETURN;
+END;
+
+DECLARE @Vid int;
+DECLARE @Total int = 0;
+DECLARE @SaltadasSinDetalle int = 0;
+
+DECLARE curHuerfanas CURSOR LOCAL FAST_FORWARD FOR
+    SELECT v.[id]
+    FROM [VenVenta] v
+    LEFT JOIN [VenPedido] p ON p.[LegacyVentaId] = v.[id]
+    WHERE p.[id] IS NULL
+      AND v.[idVenCatEstado] = 1
+    ORDER BY v.[id];
+
+OPEN curHuerfanas;
+FETCH NEXT FROM curHuerfanas INTO @Vid;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM [VenVentaDetalle] WHERE [idVenVenta] = @Vid)
+    BEGIN
+        PRINT 'Backfill total: VenVenta sin detalles, se salta.';
+        SET @SaltadasSinDetalle += 1;
+    END;
+    ELSE
+    BEGIN
+        BEGIN TRY
+            BEGIN TRANSACTION;
+
+            IF NOT EXISTS (SELECT 1 FROM [VenPedido] WHERE [LegacyVentaId] = @Vid)
+            BEGIN
+                INSERT INTO [VenPedido] ([id], [idCliCliente], [dteFechaPedido], [decTotal], [strEstadoSaga], [strMotivoRechazo], [LegacyVentaId])
+                SELECT
+                    NEWID(),
+                    v.[idCliCliente],
+                    ISNULL(v.[dteFechaHoraCompra], SYSUTCDATETIME()),
+                    ISNULL((SELECT SUM(CAST(vd.[intPiezaVenta] AS decimal(18,2)) * p.[decPrecio])
+                     FROM [VenVentaDetalle] vd
+                     JOIN [ProProducto] p ON p.[id] = vd.[idProProducto]
+                     WHERE vd.[idVenVenta] = @Vid), 0),
+                    N'Pendiente',
+                    NULL,
+                    @Vid
+                FROM [VenVenta] v
+                WHERE v.[id] = @Vid;
+            END;
+
+            INSERT INTO [VenPedidoDetalle] ([idVenPedido], [idProProducto], [intCantidad], [decPrecioUnitario])
+            SELECT
+                ped.[id],
+                vd.[idProProducto],
+                vd.[intPiezaVenta],
+                p.[decPrecio]
+            FROM [VenPedido] ped
+            JOIN [VenVentaDetalle] vd ON vd.[idVenVenta] = ped.[LegacyVentaId]
+            JOIN [ProProducto] p ON p.[id] = vd.[idProProducto]
+            WHERE ped.[LegacyVentaId] = @Vid
+              AND NOT EXISTS (
+                  SELECT 1 FROM [VenPedidoDetalle] x
+                  WHERE x.[idVenPedido] = ped.[id]
+                    AND x.[idProProducto] = vd.[idProProducto]
+              );
+
+            UPDATE ped
+            SET [decTotal] = (
+                SELECT SUM(CAST(d.[intCantidad] AS decimal(18,2)) * d.[decPrecioUnitario])
+                FROM [VenPedidoDetalle] d
+                WHERE d.[idVenPedido] = ped.[id]
+            )
+            FROM [VenPedido] ped
+            WHERE ped.[LegacyVentaId] = @Vid;
+
+            COMMIT;
+            SET @Total += 1;
+        END TRY
+        BEGIN CATCH
+            IF @@TRANCOUNT > 0 ROLLBACK;
+            PRINT 'Backfill total: error en VenVenta, se continúa con la siguiente.';
+        END CATCH;
+    END;
+
+    FETCH NEXT FROM curHuerfanas INTO @Vid;
+END;
+
+CLOSE curHuerfanas;
+DEALLOCATE curHuerfanas;
+
+PRINT 'Backfill total OK.';
+GO
+
+-- 7. Verificación post-barrido (debe devolver 0 filas con detalles pendientes):
+-- SELECT v.id AS VentaHuerfana
+-- FROM [VenVenta] v LEFT JOIN [VenPedido] p ON p.[LegacyVentaId] = v.id
+-- WHERE p.id IS NULL AND v.[idVenCatEstado] = 1
+--   AND EXISTS (SELECT 1 FROM [VenVentaDetalle] vd WHERE vd.[idVenVenta] = v.id);

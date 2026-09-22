@@ -339,40 +339,124 @@ namespace WebAPIDevSecOps.Services
                 throw new ArgumentException("El usuario especificado no existe.");
             }
 
-            var claveVenta = await GenerarClaveVentaUnicaAsync();
-
-            var venta = new VenVenta
+            // Fix B (atomicidad Etapa 1): VenVenta + VenPedido espejo en una sola
+            // transacción explícita. Si el espejo falla (DDL ausente, FK, único),
+            // se hace rollback del legacy en vez de dejar VenVenta huérfana.
+            // Con puente OFF se mantiene el comportamiento legacy exacto (sin tx).
+            if (!IsSagaBridgeEnabled())
             {
-                idCliCliente = dto.idCliCliente,
-                idSegUsuario = dto.idSegUsuario,
-                idVenCatEstado = 1,
-                dteFechaHoraCompra = DateTime.UtcNow,
-                strClaveVenta = claveVenta,
-            };
+                var claveLegacy = await GenerarClaveVentaUnicaAsync();
+                var ventaLegacy = new VenVenta
+                {
+                    idCliCliente = dto.idCliCliente,
+                    idSegUsuario = dto.idSegUsuario,
+                    idVenCatEstado = 1,
+                    dteFechaHoraCompra = DateTime.UtcNow,
+                    strClaveVenta = claveLegacy,
+                };
 
-            _context.Set<VenVenta>().Add(venta);
-            await _dbResilience.SaveChangesAsync(_context);
+                _context.Set<VenVenta>().Add(ventaLegacy);
+                await _dbResilience.SaveChangesAsync(_context);
 
-            // PostDespliegue9 (criterio 4): dual-write transparente. Misma transacción lógica
-            // (mismo DbContext): VenVenta legacy + VenPedido espejo en "Pendiente", SIN publicar evento.
-            // El evento se publica solo en el finalize PUT 1->2.
-            if (IsSagaBridgeEnabled())
+                return (await GetByIdAsync(ventaLegacy.id))!;
+            }
+
+            // Puente ON: InMemory (tests) no soporta transacciones relacionales.
+            if (!_context.Database.IsRelational())
             {
-                var pedido = new VenPedido
+                var claveMem = await GenerarClaveVentaUnicaAsync();
+                var ventaMem = new VenVenta
+                {
+                    idCliCliente = dto.idCliCliente,
+                    idSegUsuario = dto.idSegUsuario,
+                    idVenCatEstado = 1,
+                    dteFechaHoraCompra = DateTime.UtcNow,
+                    strClaveVenta = claveMem,
+                };
+
+                _context.Set<VenVenta>().Add(ventaMem);
+                await _dbResilience.SaveChangesAsync(_context);
+
+                // PostDespliegue9 (criterio 4): dual-write VenVenta legacy + VenPedido
+                // espejo en "Pendiente", SIN publicar evento (solo en finalize PUT 1->2).
+                var pedidoMem = new VenPedido
                 {
                     id = Guid.NewGuid(),
-                    LegacyVentaId = venta.id,
+                    LegacyVentaId = ventaMem.id,
                     idCliCliente = dto.idCliCliente,
-                    dteFechaPedido = venta.dteFechaHoraCompra ?? DateTime.UtcNow,
+                    dteFechaPedido = ventaMem.dteFechaHoraCompra ?? DateTime.UtcNow,
                     decTotal = 0,
                     strEstadoSaga = "Pendiente",
                 };
-                _context.Set<VenPedido>().Add(pedido);
+                _context.Set<VenPedido>().Add(pedidoMem);
                 await _dbResilience.SaveChangesAsync(_context);
-                _logger.LogInformation("SagaBridge: pedido espejo {PedidoId} creado para venta {VentaId}", pedido.id, venta.id);
+                _logger.LogInformation("SagaBridge: pedido espejo {PedidoId} creado para venta {VentaId}", pedidoMem.id, ventaMem.id);
+
+                return (await GetByIdAsync(ventaMem.id))!;
             }
 
-            return (await GetByIdAsync(venta.id))!;
+            // SQL Server: transacción explícita bajo execution strategy (exigido por
+            // EnableRetryOnFailure en Program.cs cuando hay transacción de usuario).
+            var executionStrategy = _context.Database.CreateExecutionStrategy();
+            var ventaIdCommitted = 0;
+
+            await executionStrategy.ExecuteAsync(async () =>
+            {
+                _context.ChangeTracker.Clear();
+                await using var tx = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var claveTx = await GenerarClaveVentaUnicaAsync();
+                    var fechaTx = DateTime.UtcNow;
+                    var ventaTx = new VenVenta
+                    {
+                        idCliCliente = dto.idCliCliente,
+                        idSegUsuario = dto.idSegUsuario,
+                        idVenCatEstado = 1,
+                        dteFechaHoraCompra = fechaTx,
+                        strClaveVenta = claveTx,
+                    };
+
+                    _context.Set<VenVenta>().Add(ventaTx);
+                    await _dbResilience.SaveChangesAsync(_context);
+
+                    var pedidoTx = new VenPedido
+                    {
+                        id = Guid.NewGuid(),
+                        LegacyVentaId = ventaTx.id,
+                        idCliCliente = dto.idCliCliente,
+                        dteFechaPedido = ventaTx.dteFechaHoraCompra ?? fechaTx,
+                        decTotal = 0,
+                        strEstadoSaga = "Pendiente",
+                    };
+                    _context.Set<VenPedido>().Add(pedidoTx);
+                    try
+                    {
+                        await _dbResilience.SaveChangesAsync(_context);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "SagaBridge: fallo espejo VenPedido para venta {VentaId} cliente {ClienteId}; rollback dual-write", ventaTx.id, dto.idCliCliente);
+                        throw;
+                    }
+
+                    await tx.CommitAsync();
+                    ventaIdCommitted = ventaTx.id;
+                    _logger.LogInformation("SagaBridge: pedido espejo creado para venta {VentaId}", ventaTx.id);
+                }
+                catch
+                {
+                    try { await tx.RollbackAsync(); }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogWarning(rollbackEx, "SagaBridge: rollback falló tras error dual-write");
+                    }
+                    _context.ChangeTracker.Clear();
+                    throw;
+                }
+            });
+
+            return (await GetByIdAsync(ventaIdCommitted))!;
         }
 
         private async Task<string> GenerarClaveVentaUnicaAsync()

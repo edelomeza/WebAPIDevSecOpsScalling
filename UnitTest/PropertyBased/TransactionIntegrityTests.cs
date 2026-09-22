@@ -261,10 +261,10 @@ public class TransactionIntegrityTests
             context.ProProducto.Add(producto);
             context.SaveChanges();
 
-            var ventaService = new VentaService(context, dbResilience);
+            var ventaService = new VentaService(context, dbResilience, Moq.Mock.Of<WebAPIDevSecOps.Interfaces.IEventPublisher>(), SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaService>>());
             var userMock = new Mock<IUserAccessor>();
             userMock.Setup(u => u.GetCurrentUsername()).Returns("pbuser");
-            var detalleService = new VentaDetalleService(context, dbResilience, userMock.Object);
+            var detalleService = new VentaDetalleService(context, dbResilience, userMock.Object, SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaDetalleService>>());
 
             var ventaDto = new VenVentaCreateDto
             {

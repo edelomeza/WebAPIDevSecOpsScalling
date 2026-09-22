@@ -32,7 +32,7 @@ namespace UnitTest.VentaDetalle
         {
             var userMock = new Mock<IUserAccessor>();
             userMock.Setup(u => u.GetCurrentUsername()).Returns(username);
-            return new VentaDetalleService(context, CreateDbResilience(), userMock.Object);
+            return new VentaDetalleService(context, CreateDbResilience(), userMock.Object, SagaBridgeTestConfig.BridgeOff(), Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentaDetalleService>>());
         }
 
         private static async Task<(AppDbContext context, VentaDetalleService service, int ventaId, int productoId, decimal precio, SegUsuario usuario)> SeedAsync(string username = "Test User")

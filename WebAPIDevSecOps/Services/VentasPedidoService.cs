@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using WebAPIDevSecOps.Context;
 using WebAPIDevSecOps.Dto;
 using WebAPIDevSecOps.Events;
@@ -12,12 +13,18 @@ namespace WebAPIDevSecOps.Services
         private readonly AppDbContext _context;
         private readonly DbResilienceService _dbResilience;
         private readonly IEventPublisher _eventPublisher;
+        private readonly ILogger<VentasPedidoService> _logger;
 
-        public VentasPedidoService(AppDbContext context, DbResilienceService dbResilience, IEventPublisher eventPublisher)
+        public VentasPedidoService(
+            AppDbContext context,
+            DbResilienceService dbResilience,
+            IEventPublisher eventPublisher,
+            ILogger<VentasPedidoService> logger)
         {
             _context = context;
             _dbResilience = dbResilience;
             _eventPublisher = eventPublisher;
+            _logger = logger;
         }
 
         public async Task<PedidoResponseDto> CrearPedidoAsync(PedidoCreateDto dto)
@@ -83,6 +90,101 @@ namespace WebAPIDevSecOps.Services
             await _eventPublisher.PublishAsync(evento);
 
             return await GetByIdAsync(pedidoId) ?? throw new InvalidOperationException("Error al crear el pedido.");
+        }
+
+        public async Task<PedidoResponseDto> RepublicarPendienteAsync(Guid id)
+        {
+            var pedido = await _context.Set<VenPedido>()
+                .Include(p => p.Detalles)
+                .FirstOrDefaultAsync(p => p.id == id)
+                ?? throw new KeyNotFoundException("Pedido no encontrado.");
+
+            if (!string.Equals(pedido.strEstadoSaga, "Pendiente", StringComparison.Ordinal))
+                throw new InvalidOperationException($"El pedido no está Pendiente (estado actual: {pedido.strEstadoSaga}).");
+
+            if (pedido.Detalles.Count == 0)
+                throw new InvalidOperationException("El pedido no tiene detalles; no se puede republicar.");
+
+            var precios = await _context.Set<ProProducto>()
+                .Where(p => pedido.Detalles.Select(d => d.idProProducto).Contains(p.id))
+                .ToDictionaryAsync(p => p.id, p => p.decPrecio);
+
+            decimal total = 0;
+            var items = new List<PedidoCreadoDetalleItem>(pedido.Detalles.Count);
+            foreach (var d in pedido.Detalles)
+            {
+                if (!precios.TryGetValue(d.idProProducto, out var precio))
+                    throw new ArgumentException($"El producto con ID {d.idProProducto} no existe.");
+                total += d.intCantidad * precio;
+                items.Add(new PedidoCreadoDetalleItem
+                {
+                    idProProducto = d.idProProducto,
+                    intCantidad = d.intCantidad,
+                    decPrecioUnitario = precio,
+                });
+            }
+
+            pedido.decTotal = total;
+            await _dbResilience.SaveChangesAsync(_context);
+
+            var evento = new PedidoCreadoEvent
+            {
+                PedidoId = pedido.id,
+                ClienteId = pedido.idCliCliente,
+                Total = total,
+                Detalles = items,
+                FechaCreacion = DateTime.UtcNow,
+            };
+
+            Exception? ultimoError = null;
+            for (var intento = 1; intento <= 3; intento++)
+            {
+                try
+                {
+                    await _eventPublisher.PublishAsync(evento);
+                    _logger.LogInformation("Republish pedido {PedidoId} OK (intento {Intento})", pedido.id, intento);
+                    ultimoError = null;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ultimoError = ex;
+                    _logger.LogWarning(ex, "Republish pedido {PedidoId} fallo intento {Intento}/3", pedido.id, intento);
+                    await Task.Delay(TimeSpan.FromMilliseconds(200 * intento));
+                }
+            }
+
+            if (ultimoError != null)
+            {
+                _logger.LogError(ultimoError, "Republish pedido {PedidoId} NO publicado tras 3 intentos", pedido.id);
+                throw ultimoError;
+            }
+
+            return await GetByIdAsync(pedido.id) ?? throw new InvalidOperationException("Error al republicar el pedido.");
+        }
+
+        public async Task<IReadOnlyList<PedidoResponseDto>> GetPendientesAsync(int max = 50)
+        {
+            if (max < 1 || max > 200)
+                max = 50;
+
+            var ids = await _context.Set<VenPedido>()
+                .AsNoTracking()
+                .Where(p => p.strEstadoSaga == "Pendiente")
+                .OrderBy(p => p.dteFechaPedido)
+                .Take(max)
+                .Select(p => p.id)
+                .ToListAsync();
+
+            var result = new List<PedidoResponseDto>(ids.Count);
+            foreach (var id in ids)
+            {
+                var dto = await GetByIdAsync(id);
+                if (dto != null)
+                    result.Add(dto);
+            }
+
+            return result;
         }
 
         public async Task<PedidoResponseDto?> GetByIdAsync(Guid id)

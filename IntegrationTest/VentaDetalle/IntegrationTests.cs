@@ -27,6 +27,8 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>, I
             builder.UseSetting("Jwt:Audience", JwtTestConfig.Audience);
             builder.UseSetting("UseInMemoryDatabase", "true");
             builder.UseSetting("InMemoryDatabaseName", $"VentaDetalleTestDb_{Guid.NewGuid():N}");
+            // PostDespliegue9: suite legacy (siembra VenVenta directo + stock legacy); puente saga apagado.
+            builder.UseSetting("Feature:SagaBridge", "false");
         });
         _client = _factory.CreateClient();
     }

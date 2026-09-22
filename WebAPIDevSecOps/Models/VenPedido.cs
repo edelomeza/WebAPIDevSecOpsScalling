@@ -24,6 +24,13 @@ namespace WebAPIDevSecOps.Models
         [StringLength(500)]
         public string? strMotivoRechazo { get; set; }
 
+        /// <summary>
+        /// Puente PostDespliegue9: FK lógica al legacy VenVenta (int).
+        /// Null = pedido creado directo por saga (POST /Ventas/pedido).
+        /// No es FK física para no acoplar el ciclo de vida legacy/saga.
+        /// </summary>
+        public int? LegacyVentaId { get; set; }
+
         [Timestamp]
         public byte[] RowVersion { get; set; } = new byte[] { 1 };
 

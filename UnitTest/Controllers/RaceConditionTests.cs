@@ -24,6 +24,9 @@ public class RaceConditionTests
                 builder.UseSetting("Jwt:Audience", JwtTestConfig.Audience);
                 builder.UseSetting("UseInMemoryDatabase", "true");
                 builder.UseSetting("InMemoryDatabaseName", $"RaceTest_{Guid.NewGuid():N}");
+                // PostDespliegue9: este test documenta la carrera del decremento legacy;
+                // se fija el flag apagado para no activar el puente saga (stock solo-saga).
+                builder.UseSetting("Feature:SagaBridge", "false");
             });
         var client = factory.CreateClient();
 

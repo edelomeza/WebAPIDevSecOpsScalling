@@ -92,6 +92,14 @@ namespace WebAPIDevSecOps.Context
                 .HasIndex(v => v.strEstadoSaga)
                 .HasDatabaseName("IX_VenPedido_strEstadoSaga");
 
+            // PostDespliegue9: correlación legacy 1:1 (un VenVenta -> un VenPedido espejo).
+            // Único filtrado: permite múltiples NULL (pedidos saga puros) pero un solo pedido por venta legacy.
+            modelBuilder.Entity<VenPedido>()
+                .HasIndex(v => v.LegacyVentaId)
+                .IsUnique()
+                .HasDatabaseName("IX_VenPedido_LegacyVentaId")
+                .HasFilter("[LegacyVentaId] IS NOT NULL");
+
             // ---- VenPedidoDetalle ----
             modelBuilder.Entity<VenPedidoDetalle>()
                 .HasOne(vd => vd.VenPedido)

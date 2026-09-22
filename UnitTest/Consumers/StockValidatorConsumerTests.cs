@@ -68,7 +68,8 @@ namespace UnitTest.Consumers
             {
                 id = id,
                 decTotal = total,
-                strEstadoSaga = "Creado",
+                // PostDespliegue9: el estado real que produce VentasPedidoService/VentaService es "Pendiente".
+                strEstadoSaga = "Pendiente",
                 RowVersion = new byte[] { 1, 0, 0, 0 }
             };
         }
@@ -146,8 +147,10 @@ namespace UnitTest.Consumers
         }
 
         [Fact]
-        public async Task Consume_PedidoNoExiste_IgualPublicaEventoValidado()
+        public async Task Consume_PedidoNoExiste_NoOp()
         {
+            // PostDespliegue9 (criterio 11, idempotencia): sin pedido no hay nada que validar;
+            // no se descuenta stock ni se publica evento (antes publicaba StockValidado huérfano).
             var contextDb = DbContextMock.GetDbContext();
             contextDb.ProProducto.Add(CreateProducto(1, 10));
             await contextDb.SaveChangesAsync();
@@ -158,10 +161,13 @@ namespace UnitTest.Consumers
 
             await consumer.Consume(ctx.Object);
 
-            contextDb.ProProducto.First(p => p.id == 1).intNumeroExistencia.Should().Be(9);
+            contextDb.ProProducto.First(p => p.id == 1).intNumeroExistencia.Should().Be(10);
             ctx.Verify(c => c.Publish(
-                It.Is<StockValidadoEvent>(e => e.PedidoId == evento.PedidoId),
-                It.IsAny<CancellationToken>()), Times.Once());
+                It.IsAny<StockValidadoEvent>(),
+                It.IsAny<CancellationToken>()), Times.Never());
+            ctx.Verify(c => c.Publish(
+                It.IsAny<StockRechazadoEvent>(),
+                It.IsAny<CancellationToken>()), Times.Never());
         }
     }
 }

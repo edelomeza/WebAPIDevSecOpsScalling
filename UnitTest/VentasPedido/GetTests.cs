@@ -37,7 +37,7 @@ namespace UnitTest.VentasPedido
         private VentasPedidoController CreateController(AppDbContext context)
         {
             return new VentasPedidoController(
-                new VentasPedidoService(context, _dbResilience, _eventPublisherMock.Object));
+                new VentasPedidoService(context, _dbResilience, _eventPublisherMock.Object, Moq.Mock.Of<Microsoft.Extensions.Logging.ILogger<WebAPIDevSecOps.Services.VentasPedidoService>>()));
         }
 
         [Fact]

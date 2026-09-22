@@ -783,7 +783,7 @@ jobs:
       - name: Download Trivy Report
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: trivy-report
           path: hardening/trivy
@@ -792,7 +792,7 @@ jobs:
       - name: Download Dockle Report
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dockle-report
           path: hardening/dockle
@@ -801,7 +801,7 @@ jobs:
       - name: Download Semgrep Report
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: semgrep-report
           path: hardening/semgrep
@@ -810,7 +810,7 @@ jobs:
       - name: Download ZAP Report
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dast-report
           path: hardening/zap
@@ -819,7 +819,7 @@ jobs:
       - name: Download ZAP PR Report
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zap-pr-report
           path: hardening/zap-pr

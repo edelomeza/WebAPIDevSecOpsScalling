@@ -89,7 +89,7 @@
 
 | # | Entorno | Paso | Descripción | Costo | Estado | DescripcionDev |
 |---|---|---|---|---|---|---|
-| 6.1 | **AWS** | `bash destroy-aws.sh webapidevsecops-prod` | `delete-stack` 8-10m (A) / 3-5m (B sin RDS) → `list-stacks` vacío, Consola `EC2 0,ALB 0,SQS 0` (+ `RDS 0` solo A) | **Corta facturación** | ⏳ Pendiente | Borrado en cascada con DeletionPolicy Delete, verifica 0 recursos. B: no borra DB externa 188.40.211.8 |
+| 6.1 | **AWS** | `bash destroy-aws.sh webapidevsecops-prod` | `delete-stack` 8-10m (A) / 3-5m (B sin RDS) → `list-stacks` vacío, Consola `EC2 0,ALB 0,SQS 0` (+ `RDS 0` solo A) | **Corta facturación** | ✅ Concluido | Cierre final ejecutado: `destroy-aws.sh` EXIT 0 (stack ya estaba `DELETE_COMPLETE`, `describe-stacks` → ValidationError does not exist). Verificado 0 recursos: EC2 0, ALB 0, SQS 0, CloudFront 0, LogGroup `/ecs/webapidevsecops-prod` 0. B: DB externa intacta. IAM `deploy-dev` se mantiene por decisión explícita (no se revoca en 6.2) |
 | 6.2 | **AWS** | Limpieza | `IAM Delete Access Key` + `Billing → Bills` prorrateo 14d | $0 | ⏳ Pendiente | Revoca credenciales deploy-dev y cierra costo |
 
 ---
